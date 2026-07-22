@@ -1,31 +1,12 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
 import { formatLocalDate } from '@/lib/date'
-
-async function resolveUser() {
-  let user = await getCurrentUser()
-  if (!user) {
-    user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { notionToken: { not: null } },
-          { email: { not: 'demo@brain-dump.app' } }
-        ]
-      }
-    })
-    if (!user) {
-      user = await prisma.user.findFirst()
-    }
-  }
-  return user
-}
 
 export async function POST(req: Request) {
   try {
-    const user = await resolveUser()
+    const user = await getCurrentUser()
     if (!user) {
-      return NextResponse.json({ error: 'Необхідно увійти у систему' }, { status: 400 })
+      return NextResponse.json({ error: 'Необхідно увійти у систему' }, { status: 401 })
     }
 
     const { text, model } = await req.json()

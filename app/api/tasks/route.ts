@@ -2,25 +2,21 @@ import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
-async function resolveUser() {
-  let user = await getCurrentUser()
+async function resolveUser(req?: Request) {
+  // Суворо читаємо тільки поточного авторизованого юзера з cookie
+  const user = await getCurrentUser()
   if (!user) {
-    user = await prisma.user.findFirst()
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: 'demo@brain-dump.app',
-          passwordHash: 'demo_guest_hash',
-        },
-      })
-    }
+    return null
   }
   return user
 }
 
 export async function GET(req: Request) {
   try {
-    const user = await resolveUser()
+    const user = await resolveUser(req)
+    if (!user) {
+      return NextResponse.json({ tasks: [] })
+    }
 
     const { searchParams } = new URL(req.url)
     const view = searchParams.get('view') || 'today'
@@ -30,7 +26,12 @@ export async function GET(req: Request) {
 
     if (view === 'inbox') {
       whereClause.category = 'inbox'
+    } else if (view === 'all') {
+      // Для heatmap — всі задачі без фільтрації дати
+      // whereClause вже містить userId
     } else if (dateStr) {
+      // Використовуємо локальну дату без UTC-drift:
+      // будуємо startOfDay і endOfDay як local midnight
       const [year, month, day] = dateStr.split('-').map(Number)
       const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0)
       const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999)
@@ -46,8 +47,9 @@ export async function GET(req: Request) {
         subtasks: true,
       },
       orderBy: [
+        { timeSlot: 'asc' },
         { priority: 'asc' },
-        { createdAt: 'desc' },
+        { createdAt: 'asc' },
       ],
     })
 
@@ -60,20 +62,35 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const user = await resolveUser()
+    const user = await resolveUser(req)
+    if (!user) {
+      return NextResponse.json({ error: 'Необхідно увійти у систему' }, { status: 401 })
+    }
 
     const body = await req.json()
 
     if (body.tasks && Array.isArray(body.tasks)) {
       const createdTasks = []
       for (const t of body.tasks) {
+        // Парсимо дату — зберігаємо як noon UTC щоб уникнути timezone drift
         let targetDate = new Date()
         if (t.dueDate) {
-          const parsed = new Date(t.dueDate)
-          if (!isNaN(parsed.getTime())) {
-            targetDate = parsed
+          if (typeof t.dueDate === 'string' && t.dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            // YYYY-MM-DD → noon UTC → ніколи не стрибає на сусідній день
+            const [y, m, d] = t.dueDate.split('-').map(Number)
+            targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+          } else {
+            const parsed = new Date(t.dueDate)
+            if (!isNaN(parsed.getTime())) {
+              targetDate = parsed
+            }
           }
+        } else {
+          // Дефолт — сьогодні noon UTC
+          const now = new Date()
+          targetDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0))
         }
+
         const newTask = await prisma.task.create({
           data: {
             userId: user.id,
@@ -87,7 +104,7 @@ export async function POST(req: Request) {
             subtasks: t.subtasks && t.subtasks.length > 0 ? {
               create: t.subtasks.map((st: string) => ({
                 userId: user.id,
-                title: st,
+                title: typeof st === 'string' ? st : (st as any).title || String(st),
                 priority: 4,
                 category: t.category || 'inbox',
                 duration: 15,
@@ -102,10 +119,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, tasks: createdTasks })
     }
 
+    // Одиночне завдання
     const { title, notes, priority, category, duration, dueDate, parentId, timeSlot } = body
 
     if (!title || title.trim() === '') {
       return NextResponse.json({ error: 'Назва завдання є обов\'язковою' }, { status: 400 })
+    }
+
+    let targetDate = new Date()
+    if (dueDate) {
+      if (typeof dueDate === 'string' && dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [y, m, d] = dueDate.split('-').map(Number)
+        targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+      } else {
+        const parsed = new Date(dueDate)
+        if (!isNaN(parsed.getTime())) targetDate = parsed
+      }
+    } else {
+      const now = new Date()
+      targetDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0))
     }
 
     const newTask = await prisma.task.create({
@@ -116,7 +148,7 @@ export async function POST(req: Request) {
         priority: priority ? Number(priority) : 4,
         category: category || 'inbox',
         duration: duration ? Number(duration) : 30,
-        dueDate: dueDate ? new Date(dueDate) : new Date(),
+        dueDate: targetDate,
         timeSlot: timeSlot || null,
         parentId: parentId || null,
       },
@@ -134,7 +166,10 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const user = await resolveUser()
+    const user = await resolveUser(req)
+    if (!user) {
+      return NextResponse.json({ error: 'Необхідно увійти у систему' }, { status: 401 })
+    }
 
     const body = await req.json()
     const { id, status, title, priority, category, duration, dueDate, isCarriedOver, timeSlot } = body
@@ -157,9 +192,16 @@ export async function PATCH(req: Request) {
     if (priority !== undefined) updateData.priority = Number(priority)
     if (category !== undefined) updateData.category = category
     if (duration !== undefined) updateData.duration = Number(duration)
-    if (dueDate !== undefined) updateData.dueDate = dueDate ? new Date(dueDate) : null
     if (isCarriedOver !== undefined) updateData.isCarriedOver = isCarriedOver
     if (timeSlot !== undefined) updateData.timeSlot = timeSlot
+    if (dueDate !== undefined) {
+      if (typeof dueDate === 'string' && dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [y, m, d] = dueDate.split('-').map(Number)
+        updateData.dueDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+      } else {
+        updateData.dueDate = dueDate ? new Date(dueDate) : null
+      }
+    }
 
     const updatedTask = await prisma.task.update({
       where: { id },
@@ -178,7 +220,10 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const user = await resolveUser()
+    const user = await resolveUser(req)
+    if (!user) {
+      return NextResponse.json({ error: 'Необхідно увійти у систему' }, { status: 401 })
+    }
 
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')

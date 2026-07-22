@@ -4,17 +4,9 @@ import { prisma } from '@/lib/prisma'
 
 export async function POST(req: Request) {
   try {
-    let user = await getCurrentUser()
+    const user = await getCurrentUser()
     if (!user) {
-      user = await prisma.user.findFirst()
-      if (!user) {
-        user = await prisma.user.create({
-          data: {
-            email: 'demo@brain-dump.app',
-            passwordHash: 'demo_guest_hash',
-          },
-        })
-      }
+      return NextResponse.json({ error: 'Необхідно увійти у систему' }, { status: 401 })
     }
 
     const formData = await req.formData()
@@ -29,10 +21,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'OPENAI_API_KEY не налаштовано на Vercel' }, { status: 500 })
     }
 
-    const userSettings = await prisma.settings.findUnique({
-      where: { userId: user.id },
-    })
-    const requestedModel = (formData.get('model') as string) || userSettings?.sttModel || 'whisper-1'
+    // Читаємо модель з formData (від клієнта) — завжди пріоритет
+    const requestedModel = (formData.get('model') as string) || 'whisper-1'
 
     let transcribedText = ''
 
