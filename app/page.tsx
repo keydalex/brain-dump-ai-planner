@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import confetti from 'canvas-confetti'
 import {
   Mic,
   Send,
@@ -17,6 +18,8 @@ import {
   ChevronUp,
   Tag,
   CreditCard,
+  Share2,
+  Calendar as CalendarIcon,
 } from 'lucide-react'
 import BottomNav from './components/BottomNav'
 import HeatmapCalendar from './components/HeatmapCalendar'
@@ -47,11 +50,14 @@ export default function Home() {
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   )
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
 
   const [tasks, setTasks] = useState<Task[]>([])
   const [inputText, setInputText] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [processStatus, setProcessStatus] = useState('')
+  const [isRescheduling, setIsRescheduling] = useState(false)
+  const [isSyncingNotion, setIsSyncingNotion] = useState(false)
 
   // Аудіо запис (MediaRecorder)
   const [isRecording, setIsRecording] = useState(false)
@@ -129,7 +135,7 @@ export default function Home() {
     }
   }
 
-  // Обробник Голосового запису (Web Audio MediaRecorder API)
+  // Запис голосу
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -169,7 +175,6 @@ export default function Home() {
       const formData = new FormData()
       formData.append('file', blob, 'recording.webm')
 
-      // 1. Транскрипція через Whisper API
       const transcribeRes = await fetch('/api/audio/transcribe', {
         method: 'POST',
         body: formData,
@@ -182,7 +187,6 @@ export default function Home() {
 
       setProcessStatus(`Розпізнано: "${transcribeData.text}". AI аналізує...`)
 
-      // 2. Структурування через Gemini API
       const parseRes = await fetch('/api/parse-task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -201,9 +205,19 @@ export default function Home() {
     }
   }
 
-  // Перемикання статусу завдання (Done / Todo)
+  // Перемикання статусу (із запуск Конфетті при виконанні)
   const toggleTaskStatus = async (task: Task) => {
     const newStatus = task.status === 'done' ? 'todo' : 'done'
+    
+    if (newStatus === 'done') {
+      confetti({
+        particleCount: 80,
+        spread: 60,
+        origin: { y: 0.7 },
+        colors: ['#FF5E5E', '#FFAE58', '#5EA5FF', '#10B981'],
+      })
+    }
+
     setTasks(tasks.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)))
 
     await fetch('/api/tasks', {
@@ -213,13 +227,44 @@ export default function Home() {
     })
   }
 
-  // Видалення завдання
+  // Перепланування Форс-Мажор
+  const handleReschedule = async () => {
+    setIsRescheduling(true)
+    try {
+      const res = await fetch('/api/reschedule', { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        alert('⚡ AI успішно перепланував твій день у зв\'язку з форс-мажором!')
+        fetchTasks()
+      }
+    } catch (err) {
+      alert('Помилка перепланування')
+    } finally {
+      setIsRescheduling(false)
+    }
+  }
+
+  // Ручна синхронізація з Notion
+  const handleSyncNotion = async () => {
+    setIsSyncingNotion(true)
+    try {
+      const res = await fetch('/api/notion/sync', { method: 'POST', body: JSON.stringify({}) })
+      const data = await res.json()
+      if (data.success) {
+        alert(data.message || '🎉 Завдання успішно синхронізовано з Notion!')
+      }
+    } catch (err) {
+      alert('Помилка синхронізації з Notion')
+    } finally {
+      setIsSyncingNotion(false)
+    }
+  }
+
   const deleteTask = async (id: string) => {
     setTasks(tasks.filter((t) => t.id !== id))
     await fetch(`/api/tasks?id=${id}`, { method: 'DELETE' })
   }
 
-  // Активація Оплати Підписки (20 грн)
   const handleSubscribe = async () => {
     try {
       const res = await fetch('/api/payment/checkout', { method: 'POST' })
@@ -235,7 +280,11 @@ export default function Home() {
     }
   }
 
-  // Розрахунок підсумків завантаженості для Heatmap
+  // Фільтрація задач за категорією
+  const filteredTasks = selectedCategory === 'all'
+    ? tasks
+    : tasks.filter((t) => t.category.toLowerCase() === selectedCategory.toLowerCase())
+
   const taskSummaries: Record<string, { count: number; hasHighPriority: boolean }> = {}
   tasks.forEach((t) => {
     if (t.dueDate) {
@@ -261,7 +310,6 @@ export default function Home() {
 
   return (
     <div className="flex-1 flex flex-col pb-20 relative">
-      {/* Шапка мобільного застосунку */}
       <header className="p-4 flex justify-between items-center border-b border-[#232326] bg-[#0B0B0C]/80 backdrop-blur-md sticky top-0 z-40">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#FF5E5E] to-[#FFAE58] flex items-center justify-center font-bold text-white text-xs shadow-md">
@@ -280,7 +328,16 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleSyncNotion}
+            disabled={isSyncingNotion}
+            className="p-2 text-[#A78BFA] hover:text-white rounded-xl hover:bg-[#161618] transition-all"
+            title="Синхронізувати з Notion"
+          >
+            <Share2 className={`w-4 h-4 ${isSyncingNotion ? 'animate-spin' : ''}`} />
+          </button>
+
           <button
             onClick={() => setShowOnboarding(true)}
             className="p-2 text-[#8E8E93] hover:text-white rounded-xl hover:bg-[#161618] transition-all"
@@ -312,13 +369,23 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Основний контент */}
       <main className="p-4 flex-1 flex flex-col">
-        {/* Головне поле вводу думок (Capture Box) */}
-        <div className="bg-[#161618] border border-[#232326] rounded-2xl p-3 mb-4 shadow-lg">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-4 h-4 text-[#FF5E5E]" />
-            <span className="text-xs font-semibold text-white">Що в голові?</span>
+        {/* Головне поле вводу думок */}
+        <div className="bg-[#161618] border border-[#232326] rounded-2xl p-3 mb-3 shadow-lg">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-[#FF5E5E]" />
+              <span className="text-xs font-semibold text-white">Що в голові?</span>
+            </div>
+
+            <button
+              onClick={handleReschedule}
+              disabled={isRescheduling}
+              className="text-[10px] bg-[#FFAE58]/15 text-[#FFAE58] hover:bg-[#FFAE58]/25 font-bold px-2 py-1 rounded-lg flex items-center gap-1 transition-all active:scale-95"
+            >
+              <Zap className={`w-3 h-3 ${isRescheduling ? 'animate-bounce' : ''}`} />
+              Форс-Мажор
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -332,7 +399,6 @@ export default function Home() {
               className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FF5E5E]"
             />
 
-            {/* Кнопка розпізнавання голосу */}
             <button
               onClick={isRecording ? stopRecording : startRecording}
               className={`p-2.5 rounded-xl transition-all active:scale-95 ${
@@ -362,7 +428,23 @@ export default function Home() {
           )}
         </div>
 
-        {/* Перемикачі екранів */}
+        {/* Слайдер категорії */}
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar mb-3">
+          {['all', 'inbox', 'work', 'personal', 'fitness', 'study'].map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`px-3 py-1 rounded-xl text-[11px] font-semibold capitalize whitespace-nowrap transition-all ${
+                selectedCategory === cat
+                  ? 'bg-[#FF5E5E] text-white'
+                  : 'bg-[#161618] text-[#8E8E93] border border-[#232326]'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
         {activeTab === 'week' && (
           <WeekTab selectedDate={selectedDate} onSelectDate={setSelectedDate} />
         )}
@@ -375,7 +457,6 @@ export default function Home() {
           />
         )}
 
-        {/* Налаштування та Оплата */}
         {activeTab === 'settings' && (
           <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4 mb-4">
             <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
@@ -407,8 +488,7 @@ export default function Home() {
 
         {/* Список задач */}
         <div className="flex-1 flex flex-col gap-2">
-          {tasks.length === 0 ? (
-            /* Екран порожнього стану (Empty State) */
+          {filteredTasks.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center my-auto">
               <div className="w-16 h-16 rounded-full bg-[#1C1C1E] border border-[#232326] flex items-center justify-center mb-3 text-[#FF5E5E]">
                 <Zap className="w-8 h-8 opacity-80" />
@@ -421,11 +501,10 @@ export default function Home() {
               </p>
             </div>
           ) : (
-            tasks.map((task) => {
+            filteredTasks.map((task) => {
               const isDone = task.status === 'done'
               const isExpanded = !!expandedTaskIds[task.id]
 
-              // Колір пріоритету
               const prioColor =
                 task.priority === 1
                   ? 'border-l-4 border-l-[#FF5E5E]'
@@ -435,6 +514,10 @@ export default function Home() {
                   ? 'border-l-4 border-l-[#5EA5FF]'
                   : 'border-l-4 border-l-[#232326]'
 
+              const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(
+                task.title
+              )}&details=${encodeURIComponent('Створено в Brain Dump AI Planner')}`
+
               return (
                 <div
                   key={task.id}
@@ -443,7 +526,6 @@ export default function Home() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    {/* Чекбокс */}
                     <button
                       onClick={() => toggleTaskStatus(task)}
                       className="text-[#8E8E93] hover:text-[#FF5E5E] transition-colors"
@@ -455,7 +537,6 @@ export default function Home() {
                       )}
                     </button>
 
-                    {/* Текст завдання */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span
@@ -485,8 +566,17 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Підзадачі та Видалення */}
                     <div className="flex items-center gap-1">
+                      <a
+                        href={gcalUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1 text-[#8E8E93] hover:text-[#5EA5FF]"
+                        title="Додати в Google Календар"
+                      >
+                        <CalendarIcon className="w-3.5 h-3.5" />
+                      </a>
+
                       {task.subtasks && task.subtasks.length > 0 && (
                         <button
                           onClick={() =>
@@ -514,7 +604,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Вкладені підзадачі */}
                   {isExpanded && task.subtasks && task.subtasks.length > 0 && (
                     <div className="mt-2.5 pt-2.5 border-t border-[#232326] pl-6 flex flex-col gap-1.5">
                       {task.subtasks.map((sub) => (
@@ -532,7 +621,6 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Нижня навігація */}
       <BottomNav
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -540,7 +628,6 @@ export default function Home() {
         taskCountInbox={tasks.filter((t) => t.category === 'inbox' && t.status === 'todo').length}
       />
 
-      {/* Модалки */}
       <OnboardingModal isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
       <AuthModal
         isOpen={showAuthModal}
