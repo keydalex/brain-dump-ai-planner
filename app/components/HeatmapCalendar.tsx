@@ -88,15 +88,17 @@ export default function HeatmapCalendar({
           const isSelected = dateStr === selectedDate
           const info = taskSummaries[dateStr] || { count: 0, hasHighPriority: false }
 
-          // Стилі підсвітки залежно від завантаженості
+          // Насиченість червоного кольору залежно від кількості завдань та важливості
           let bgColor = 'bg-[#1C1C1E] text-[#8E8E93]'
           if (info.count > 0) {
-            if (info.hasHighPriority) {
-              bgColor = 'bg-[#FF5E5E]/80 text-white font-bold shadow-sm shadow-[#FF5E5E]/30'
-            } else if (info.count >= 4) {
-              bgColor = 'bg-[#FFAE58] text-black font-bold shadow-sm shadow-[#FFAE58]/30'
+            if (info.hasHighPriority || info.count >= 4) {
+              bgColor = 'bg-[#FF5E5E] text-white font-black shadow-md shadow-[#FF5E5E]/40'
+            } else if (info.count === 3) {
+              bgColor = 'bg-[#FF5E5E]/75 text-white font-bold'
+            } else if (info.count === 2) {
+              bgColor = 'bg-[#FF5E5E]/50 text-white font-medium'
             } else {
-              bgColor = 'bg-[#5EA5FF]/60 text-white font-medium'
+              bgColor = 'bg-[#FF5E5E]/25 text-white/90'
             }
           }
 

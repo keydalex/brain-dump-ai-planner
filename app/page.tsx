@@ -64,6 +64,7 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({})
 
@@ -188,10 +189,16 @@ export default function Home() {
       mediaRecorderRef.current.ondataavailable = (e) => {
         if (e.data.size > 0) {
           audioChunksRef.current.push(e.data)
+          // Перезапускаємо 7-секундний таймер автоматичної зупинки при тиші
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
+          silenceTimerRef.current = setTimeout(() => {
+            stopRecording()
+          }, 7000)
         }
       }
 
       mediaRecorderRef.current.onstop = async () => {
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
         const recordedBlob = new Blob(audioChunksRef.current, {
           type: mediaRecorderRef.current?.mimeType || 'audio/webm',
         })
@@ -200,6 +207,12 @@ export default function Home() {
 
       mediaRecorderRef.current.start(100)
       setIsRecording(true)
+
+      // Початковий 7-секундний таймер автоматичної зупинки
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = setTimeout(() => {
+        stopRecording()
+      }, 7000)
     } catch (err) {
       console.error('Microphone error:', err)
       alert('Не вдалося отримати доступ до мікрофона. Перевірте дозволи у браузері.')
@@ -207,6 +220,7 @@ export default function Home() {
   }
 
   const stopRecording = () => {
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop()
       setIsRecording(false)
@@ -1258,7 +1272,7 @@ export default function Home() {
 
               <button
                 onClick={handleReschedule}
-                disabled={isRescheduling || !rescheduleSituation.trim()}
+                disabled={isRescheduling}
                 className="w-full mt-2 py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white rounded-xl font-bold text-xs transition-all active:scale-95 disabled:opacity-40"
               >
                 {isRescheduling ? 'AI оптимізує розклад...' : '⚡ Перебудувати розклад'}
