@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { syncTaskToNotion } from '@/lib/notion'
 
 async function resolveUser() {
   let user = await getCurrentUser()
@@ -28,7 +27,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Необхідно зареєструватись' }, { status: 400 })
     }
 
-    const { text } = await req.json()
+    const { text, model } = await req.json()
     if (!text || text.trim() === '') {
       return NextResponse.json({ error: 'Текст для аналізу порожній' }, { status: 400 })
     }
@@ -37,6 +36,9 @@ export async function POST(req: Request) {
     if (!apiKey) {
       return NextResponse.json({ error: 'GEMINI_API_KEY не налаштовано на Vercel' }, { status: 500 })
     }
+
+    // Дозволяємо вибір моделі (за замовчуванням gemini-3.6-flash)
+    const activeModel = model || 'gemini-3.6-flash'
 
     const now = new Date()
     const todayStr = now.toISOString().split('T')[0]
@@ -47,7 +49,7 @@ export async function POST(req: Request) {
 
     // Виклик Gemini REST API із суворим JSON розбором та temperature=0
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -114,48 +116,9 @@ export async function POST(req: Request) {
     }
 
     const { tasks } = JSON.parse(parsedText)
-    const createdTasks = []
 
-    for (const parsedTask of tasks) {
-      let targetDate = new Date()
-      if (parsedTask.dueDate) {
-        const parsedDate = new Date(parsedTask.dueDate)
-        if (!isNaN(parsedDate.getTime())) {
-          targetDate = parsedDate
-        }
-      }
-
-      // Створення завдання в Supabase
-      const newTask = await prisma.task.create({
-        data: {
-          userId: user.id,
-          title: parsedTask.title,
-          priority: parsedTask.priority || 4,
-          category: parsedTask.category || 'inbox',
-          duration: parsedTask.duration || 30,
-          dueDate: targetDate,
-          subtasks: parsedTask.subtasks && parsedTask.subtasks.length > 0 ? {
-            create: parsedTask.subtasks.map((st: string) => ({
-              userId: user.id,
-              title: st,
-              priority: 4,
-              category: parsedTask.category || 'inbox',
-              duration: 15,
-              dueDate: targetDate,
-            }))
-          } : undefined,
-        },
-        include: {
-          subtasks: true,
-        },
-      })
-
-      // Автоматична фонова синхронізація в Notion
-      syncTaskToNotion(newTask.id, user.id).catch((err) => console.error('Auto Notion sync error:', err))
-      createdTasks.push(newTask)
-    }
-
-    return NextResponse.json({ success: true, tasks: createdTasks })
+    // Повертаємо чернетки (drafts) користувачу для підтвердження та коригування перед записом у базу
+    return NextResponse.json({ success: true, drafts: tasks })
   } catch (error) {
     console.error('Parse task API error:', error)
     return NextResponse.json({ error: 'Внутрішня помилка сервера' }, { status: 500 })

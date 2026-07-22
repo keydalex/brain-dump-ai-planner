@@ -63,6 +63,45 @@ export async function POST(req: Request) {
     const user = await resolveUser()
 
     const body = await req.json()
+
+    // Якщо це масив завдань для пакетного створення (Confirmation Flow)
+    if (body.tasks && Array.isArray(body.tasks)) {
+      const createdTasks = []
+      for (const t of body.tasks) {
+        let targetDate = new Date()
+        if (t.dueDate) {
+          const parsed = new Date(t.dueDate)
+          if (!isNaN(parsed.getTime())) {
+            targetDate = parsed
+          }
+        }
+        const newTask = await prisma.task.create({
+          data: {
+            userId: user.id,
+            title: t.title.trim(),
+            notes: t.notes || null,
+            priority: t.priority ? Number(t.priority) : 4,
+            category: t.category || 'inbox',
+            duration: t.duration ? Number(t.duration) : 30,
+            dueDate: targetDate,
+            subtasks: t.subtasks && t.subtasks.length > 0 ? {
+              create: t.subtasks.map((st: string) => ({
+                userId: user.id,
+                title: st,
+                priority: 4,
+                category: t.category || 'inbox',
+                duration: 15,
+                dueDate: targetDate,
+              }))
+            } : undefined,
+          },
+          include: { subtasks: true },
+        })
+        createdTasks.push(newTask)
+      }
+      return NextResponse.json({ success: true, tasks: createdTasks })
+    }
+
     const { title, notes, priority, category, duration, dueDate, parentId } = body
 
     if (!title || title.trim() === '') {

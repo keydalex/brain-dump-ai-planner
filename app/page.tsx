@@ -70,6 +70,9 @@ export default function Home() {
   const [parentPageId, setParentPageId] = useState<string>('')
   const [isCreatingNotionDB, setIsCreatingNotionDB] = useState<boolean>(false)
 
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.6-flash')
+  const [draftTasks, setDraftTasks] = useState<any[] | null>(null)
+
   // Отримання сесії користувача при завантаженні
   useEffect(() => {
     fetch('/api/auth/me')
@@ -123,13 +126,13 @@ export default function Home() {
       const res = await fetch('/api/parse-task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: inputText }),
+        body: JSON.stringify({ text: inputText, model: selectedModel }),
       })
 
       const data = await res.json()
-      if (data.task) {
+      if (data.drafts) {
+        setDraftTasks(data.drafts)
         setInputText('')
-        fetchTasks()
       }
     } catch (err) {
       console.error(err)
@@ -194,12 +197,11 @@ export default function Home() {
       const parseRes = await fetch('/api/parse-task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: transcribeData.text }),
+        body: JSON.stringify({ text: transcribeData.text, model: selectedModel }),
       })
       const parseData = await parseRes.json()
-
-      if (parseData.task) {
-        fetchTasks()
+      if (parseData.drafts) {
+        setDraftTasks(parseData.drafts)
       }
     } catch (err) {
       console.error(err)
@@ -319,6 +321,35 @@ export default function Home() {
       alert('Помилка запиту до Notion')
     } finally {
       setIsCreatingNotionDB(false)
+    }
+  }
+
+  const handleConfirmDrafts = async () => {
+    if (!draftTasks || draftTasks.length === 0) return
+    setIsProcessing(true)
+    setProcessStatus('Зберігаємо завдання...')
+
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tasks: draftTasks }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 }
+        })
+        setDraftTasks(null)
+        fetchTasks()
+      }
+    } catch (err) {
+      alert('Помилка збереження завдань')
+    } finally {
+      setIsProcessing(false)
+      setProcessStatus('')
     }
   }
 
@@ -492,12 +523,27 @@ export default function Home() {
             </button>
           </div>
 
-          {processStatus && (
-            <div className="mt-2 text-[10px] text-[#A78BFA] flex items-center gap-1.5 animate-pulse">
-              <RefreshCw className="w-3 h-3 animate-spin" />
-              <span>{processStatus}</span>
+          <div className="mt-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-1 text-[10px] text-[#8E8E93]">
+              <span>Модель AI:</span>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-1.5 py-0.5 rounded focus:outline-none"
+              >
+                <option value="gemini-3.6-flash">Gemini 3.6 Flash (Reasoning)</option>
+                <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+              </select>
             </div>
-          )}
+            
+            {processStatus && (
+              <div className="text-[10px] text-[#A78BFA] flex items-center gap-1.5 animate-pulse">
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                <span>{processStatus}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Слайдер категорії */}
@@ -618,6 +664,111 @@ export default function Home() {
                   {isCreatingNotionDB ? 'Створення...' : 'Створити'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Панель чернеток задач для перевірки (AI Draft Confirmation Flow) */}
+        {draftTasks && draftTasks.length > 0 && (
+          <div className="bg-[#1C1C1E] border border-[#FFAE58] rounded-2xl p-4 mb-4 shadow-xl">
+            <div className="flex items-center justify-between mb-3 border-b border-[#232326] pb-2">
+              <span className="text-xs font-extrabold text-[#FFAE58] flex items-center gap-1.5 uppercase tracking-wider">
+                🤖 AI пропонує такі справи ({draftTasks.length}):
+              </span>
+              <button
+                onClick={() => setDraftTasks(null)}
+                className="text-[10px] text-[#8E8E93] hover:text-white"
+              >
+                Скасувати
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {draftTasks.map((t, idx) => (
+                <div key={idx} className="bg-[#161618] border border-[#232326] rounded-xl p-3 flex flex-col gap-2.5">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Назва завдання:</span>
+                    <input
+                      type="text"
+                      value={t.title}
+                      onChange={(e) => {
+                        const updated = [...draftTasks]
+                        updated[idx].title = e.target.value
+                        setDraftTasks(updated)
+                      }}
+                      className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#FFAE58]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Пріоритет:</span>
+                      <select
+                        value={t.priority}
+                        onChange={(e) => {
+                          const updated = [...draftTasks]
+                          updated[idx].priority = Number(e.target.value)
+                          setDraftTasks(updated)
+                        }}
+                        className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2.5 py-1.5 focus:outline-none"
+                      >
+                        <option value={1}>🔴 P1 - High</option>
+                        <option value={2}>🟠 P2 - Medium</option>
+                        <option value={3}>🔵 P3 - Low</option>
+                        <option value={4}>⚪ P4 - None</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Категорія:</span>
+                      <select
+                        value={t.category}
+                        onChange={(e) => {
+                          const updated = [...draftTasks]
+                          updated[idx].category = e.target.value
+                          setDraftTasks(updated)
+                        }}
+                        className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2.5 py-1.5 focus:outline-none"
+                      >
+                        <option value="inbox">📥 Inbox</option>
+                        <option value="work">💻 Work</option>
+                        <option value="personal">👤 Personal</option>
+                        <option value="fitness">🏋️ Fitness</option>
+                        <option value="study">📚 Study</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Тривалість (хв):</span>
+                      <input
+                        type="number"
+                        value={t.duration}
+                        onChange={(e) => {
+                          const updated = [...draftTasks]
+                          updated[idx].duration = Number(e.target.value)
+                          setDraftTasks(updated)
+                        }}
+                        className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#FFAE58]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={handleConfirmDrafts}
+                className="flex-1 py-2.5 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white text-xs font-bold rounded-xl active:scale-95 shadow-md shadow-[#FF5E5E]/20"
+              >
+                ✅ Підтвердити та додати справи
+              </button>
+              <button
+                onClick={() => setDraftTasks(null)}
+                className="px-4 py-2.5 bg-[#232326] text-[#8E8E93] text-xs font-bold rounded-xl active:scale-95"
+              >
+                Скасувати
+              </button>
             </div>
           </div>
         )}
