@@ -72,7 +72,7 @@ export default function Home() {
   const [parentPageId, setParentPageId] = useState<string>('')
   const [isCreatingNotionDB, setIsCreatingNotionDB] = useState<boolean>(false)
 
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash')
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.1-flash-lite')
   const [draftTasks, setDraftTasks] = useState<any[] | null>(null)
 
   const [sortBy, setSortBy] = useState<'time' | 'priority'>('time')
@@ -690,9 +690,11 @@ export default function Home() {
                   onChange={(e) => setSelectedModel(e.target.value)}
                   className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-2 py-1 rounded-lg focus:outline-none"
                 >
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Швидкість + Логіка)</option>
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash (Баланс)</option>
-                  <option value="gemini-1.5-pro">Gemini 1.5 Pro (Максимальна якість)</option>
+                  <option value="gemini-3.1-flash-lite">⭐ 1. Gemini 3.1 Flash Lite (500 RPD — Найкращий вибір)</option>
+                  <option value="gemini-3.5-flash-lite">⚡ 2. Gemini 3.5 Flash Lite (500 RPD — Супершвидкісна)</option>
+                  <option value="gemini-3.5-flash">🔥 3. Gemini 3.5 Flash (Швидкість + Логіка)</option>
+                  <option value="gemini-2.5-flash">💎 4. Gemini 2.5 Flash (Баланс)</option>
+                  <option value="gemini-3.1-pro">🧠 5. Gemini 3.1 Pro (Глибокий аналіз)</option>
                 </select>
               </div>
 

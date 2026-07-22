@@ -38,11 +38,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'GEMINI_API_KEY не налаштовано' }, { status: 500 })
     }
 
-    // Визначаємо валідну модель Gemini
-    let activeModel = model || 'gemini-2.5-flash'
-    if (activeModel.includes('3.6') || activeModel.includes('3.5') || activeModel.includes('3.1')) {
-      activeModel = 'gemini-2.5-flash'
-    }
+    // За замовчуванням Gemini 3.1 Flash Lite (має величезний ліміт 500 RPD)
+    const activeModel = model || 'gemini-3.1-flash-lite'
 
     const now = new Date()
     const todayStr = formatLocalDate(now)
@@ -112,6 +109,7 @@ export async function POST(req: Request) {
       },
     }
 
+    // Основна спроба обраною моделлю
     let geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`,
       {
@@ -121,10 +119,24 @@ export async function POST(req: Request) {
       }
     )
 
-    if (!geminiRes.ok) {
-      console.warn(`Model ${activeModel} failed, retrying with gemini-1.5-flash...`)
+    // Страховка 1: Якщо обрана модель перевищила ліміт RPD, пробуємо gemini-3.1-flash-lite (500 RPD)
+    if (!geminiRes.ok && activeModel !== 'gemini-3.1-flash-lite') {
+      console.warn(`Model ${activeModel} failed, retrying with gemini-3.1-flash-lite...`)
       geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      )
+    }
+
+    // Страховка 2: gemini-3.5-flash-lite (500 RPD)
+    if (!geminiRes.ok) {
+      console.warn(`Fallback to gemini-3.5-flash-lite...`)
+      geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
