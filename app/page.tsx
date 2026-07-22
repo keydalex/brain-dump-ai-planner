@@ -224,22 +224,14 @@ export default function Home() {
         throw new Error('Не вдалося розпізнати мову')
       }
 
-      setProcessStatus(`Розпізнано: "${transcribeData.text}". AI аналізує...`)
-
-      const parseRes = await fetch('/api/parse-task', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: transcribeData.text, model: selectedModel }),
-      })
-      const parseData = await parseRes.json()
-      if (parseData.drafts) {
-        setDraftTasks(parseData.drafts)
-      }
+      // Вставляємо розпізнаний текст у текстове поле для перевірки та редагування
+      setInputText((prev) => (prev ? `${prev}\n${transcribeData.text}` : transcribeData.text))
+      setProcessStatus('Голос розпізнано! Можеш відредагувати текст і натиснути відправити.')
     } catch (err) {
       console.error(err)
+      alert('Помилка розпізнавання голосу')
     } finally {
       setIsProcessing(false)
-      setProcessStatus('')
     }
   }
 
@@ -532,49 +524,58 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
+          <div className="flex items-start gap-2">
+            <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendText()}
-              placeholder="Надиктуй або вкинь думку..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSendText()
+                }
+              }}
+              placeholder="Надиктуй або вкинь думку (підтримує декілька рядків)..."
               disabled={isProcessing}
-              className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FF5E5E]"
+              rows={2}
+              className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FF5E5E] min-h-[64px] max-h-[140px] resize-none overflow-y-auto"
             />
 
-            <button
-              onClick={isRecording ? stopRecording : startRecording}
-              className={`p-2.5 rounded-xl transition-all active:scale-95 ${
-                isRecording
-                  ? 'bg-[#FF5E5E] text-white animate-pulse shadow-lg shadow-[#FF5E5E]/40'
-                  : 'bg-[#1C1C1E] text-[#A78BFA] hover:text-white border border-[#232326]'
-              }`}
-              title="Голосовий ввід (Whisper STT)"
-            >
-              <Mic className="w-4 h-4" />
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                className={`p-2.5 rounded-xl transition-all active:scale-95 flex items-center justify-center ${
+                  isRecording
+                    ? 'bg-[#FF5E5E] text-white animate-pulse shadow-lg shadow-[#FF5E5E]/40'
+                    : 'bg-[#1C1C1E] text-[#A78BFA] hover:text-white border border-[#232326]'
+                }`}
+                title="Голосовий ввід (Whisper STT)"
+              >
+                <Mic className="w-4 h-4" />
+              </button>
 
-            <button
-              onClick={handleSendText}
-              disabled={isProcessing || !inputText.trim()}
-              className="p-2.5 bg-[#FF5E5E] text-white rounded-xl active:scale-95 disabled:opacity-40"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+              <button
+                onClick={handleSendText}
+                disabled={isProcessing || !inputText.trim()}
+                className="p-2.5 bg-[#FF5E5E] text-white rounded-xl active:scale-95 disabled:opacity-40 flex items-center justify-center"
+                title="Відправити AI на розбір"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <div className="mt-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-1 text-[10px] text-[#8E8E93]">
+            <div className="flex items-center gap-1.5 text-[10px] text-[#8E8E93]">
               <span>Модель AI:</span>
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-1.5 py-0.5 rounded focus:outline-none"
+                className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-2 py-1 rounded-lg focus:outline-none"
               >
-                <option value="gemini-3.6-flash">Gemini 3.6 Flash (Reasoning)</option>
-                <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                <option value="gemini-3.6-flash">Gemini 3.6 Flash (Швидкість + Логіка)</option>
+                <option value="gemini-3.5-flash">Gemini 3.5 Flash (Баланс)</option>
+                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Ультрашвидка)</option>
+                <option value="gemini-3.1-pro">Gemini 3.1 Pro (Глибока аналітика)</option>
               </select>
             </div>
             

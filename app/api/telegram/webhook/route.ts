@@ -199,7 +199,12 @@ export async function POST(req: Request) {
       const apiKey = process.env.GEMINI_API_KEY
       const now = new Date()
       const todayStr = formatLocalDate(now)
-      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+      const currentTimeStr = now.toLocaleTimeString('uk-UA', {
+        timeZone: 'Europe/Kyiv',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
       const weekdays = ['неділя', 'понеділок', 'вівторок', 'середа', 'четвер', 'п’ятниця', 'субота']
       const currentDayOfWeek = weekdays[now.getDay()]
 
