@@ -596,7 +596,8 @@ export default function Home() {
       <main className="p-4 flex-1 flex flex-col gap-3">
 
         {/* Поле вводу */}
-        <div id="input-area" className="bg-[#161618] border border-[#232326] rounded-2xl p-3 shadow-lg">
+        {activeTab !== 'settings' && (
+          <div id="input-area" className="bg-[#161618] border border-[#232326] rounded-2xl p-3 shadow-lg">
           <div className="flex items-start gap-2">
             {/* Велика кнопка мікрофона */}
             <button
@@ -663,29 +664,32 @@ export default function Home() {
               onChange={(e) => { setSelectedModel(e.target.value); localStorage.setItem('aiModel', e.target.value) }}
               className="bg-[#1C1C1E] border border-[#232326] text-[#8E8E93] text-[10px] px-1.5 py-2 rounded-xl focus:outline-none"
             >
-              <option value="gemini-3.1-flash-lite">🧠 Lite</option>
-              <option value="gemini-3.5-flash">⚡ Flash</option>
-              <option value="gemini-2.5-flash">💎 Pro</option>
+              <option value="gemini-3.1-flash-lite">⭐ Gemini 3.1 Flash Lite</option>
+              <option value="gemini-3.5-flash">⚡ Gemini 3.5 Flash</option>
+              <option value="gemini-2.5-flash">💎 Gemini 2.5 Flash</option>
             </select>
           </div>
         </div>
+        )}
 
         {/* Фільтр категорій */}
-        <div id="category-filter" className="flex gap-1.5 overflow-x-auto no-scrollbar">
-          {[
-            { key: 'all', label: 'Всі' },
-            { key: 'work', label: '💻 Work' },
-            { key: 'personal', label: '👤 Personal' },
-            { key: 'fitness', label: '🏋️ Fitness' },
-            { key: 'study', label: '📚 Study' },
-          ].map(({ key, label }) => (
-            <button key={key} onClick={() => setSelectedCategory(key)}
-              className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-all ${
-                selectedCategory === key ? 'bg-[#FF5E5E] text-white' : 'bg-[#161618] text-[#8E8E93] border border-[#232326]'
-              }`}
-            >{label}</button>
-          ))}
-        </div>
+        {activeTab !== 'settings' && (
+          <div id="category-filter" className="flex gap-1.5 overflow-x-auto no-scrollbar">
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'work', label: '💻 Work' },
+              { key: 'personal', label: '👤 Personal' },
+              { key: 'fitness', label: '🏋️ Fitness' },
+              { key: 'study', label: '📚 Study' },
+            ].map(({ key, label }) => (
+              <button key={key} onClick={() => setSelectedCategory(key)}
+                className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-all ${
+                  selectedCategory === key ? 'bg-[#FF5E5E] text-white' : 'bg-[#161618] text-[#8E8E93] border border-[#232326]'
+                }`}
+              >{label}</button>
+            ))}
+          </div>
+        )}
 
         {/* Календарі */}
         {activeTab === 'week' && (
