@@ -115,10 +115,10 @@ export default function Home() {
       let url = '/api/tasks'
       if (activeTab === 'inbox') {
         url += '?view=inbox'
-      } else if (activeTab === 'today') {
-        url += `?date=${formatLocalDate()}`
       } else if (selectedDate) {
         url += `?date=${selectedDate}`
+      } else if (activeTab === 'today') {
+        url += `?date=${formatLocalDate()}`
       }
 
       const res = await fetch(url)
@@ -1191,7 +1191,12 @@ export default function Home() {
 
       <BottomNav
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={(tab) => {
+          setActiveTab(tab)
+          if (tab === 'today') {
+            setSelectedDate(formatLocalDate())
+          }
+        }}
         taskCountToday={tasks.filter((t) => t.status === 'todo').length}
         taskCountInbox={tasks.filter((t) => t.category === 'inbox' && t.status === 'todo').length}
       />

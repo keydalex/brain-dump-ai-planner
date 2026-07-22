@@ -31,9 +31,9 @@ export async function GET(req: Request) {
     if (view === 'inbox') {
       whereClause.category = 'inbox'
     } else if (dateStr) {
-      const targetDate = new Date(dateStr)
-      const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0))
-      const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999))
+      const [year, month, day] = dateStr.split('-').map(Number)
+      const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0)
+      const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999)
       whereClause.dueDate = {
         gte: startOfDay,
         lte: endOfDay,
@@ -64,7 +64,6 @@ export async function POST(req: Request) {
 
     const body = await req.json()
 
-    // Якщо це масив завдань для пакетного створення (Confirmation Flow)
     if (body.tasks && Array.isArray(body.tasks)) {
       const createdTasks = []
       for (const t of body.tasks) {
