@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { syncTaskToNotion } from '@/lib/notion'
 
 export async function POST(req: Request) {
   try {
@@ -57,8 +58,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true })
     }
 
-    // 2. Отримуємо першого користувача системи (або створюємо за замовчуванням)
-    let user = await prisma.user.findFirst()
+    // 2. Отримуємо користувача системи (шукаємо спочатку того, хто налаштував Notion або активного користувача)
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { notionToken: { not: null } },
+          { email: { not: 'telegram_user@brain-dump.app' } }
+        ]
+      }
+    })
+    if (!user) {
+      user = await prisma.user.findFirst()
+    }
     if (!user) {
       user = await prisma.user.create({
         data: {
@@ -127,6 +138,9 @@ export async function POST(req: Request) {
         dueDate: new Date(),
       },
     })
+
+    // Автоматично синхронізуємо у Notion
+    syncTaskToNotion(createdTask.id, user.id).catch((err) => console.error('Telegram Notion sync error:', err))
 
     // 5. Відповідаємо в Telegram
     const replyText = `✅ **Додано в Inbox!**\n\n📌 **${createdTask.title}**\n⏱️ Тривалість: ${createdTask.duration} хв | Пріоритет: P${createdTask.priority}`
