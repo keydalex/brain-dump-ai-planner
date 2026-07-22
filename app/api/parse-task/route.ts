@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
-import { formatLocalDate } from '@/lib/date'
+import { formatLocalDate, getKyivTimeStr } from '@/lib/date'
 
 export async function POST(req: Request) {
   try {
@@ -19,22 +19,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'GEMINI_API_KEY не налаштовано' }, { status: 500 })
     }
 
-    // За замовчуванням Gemini 3.1 Flash Lite (має величезний ліміт 500 RPD)
-    const activeModel = model || 'gemini-3.1-flash-lite'
+    // Мапінг вибраної моделі на справжні API моделі Google Gemini
+    let realModel = 'gemini-2.0-flash-lite'
+    if (model === 'gemini-2.0-flash' || model === 'gemini-3.5-flash') {
+      realModel = 'gemini-2.0-flash'
+    } else if (model === 'gemini-1.5-pro' || model === 'gemini-3.1-pro') {
+      realModel = 'gemini-1.5-pro'
+    }
 
-    const now = new Date()
-    const todayStr = formatLocalDate(now)
-    const currentTimeStr = now.toLocaleTimeString('uk-UA', {
-      timeZone: 'Europe/Kyiv',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    })
+    const todayStr = formatLocalDate()
+    const currentTimeStr = getKyivTimeStr()
     
+    const now = new Date()
     const weekdays = ['неділя', 'понеділок', 'вівторок', 'середа', 'четвер', 'п’ятниця', 'субота']
     const currentDayOfWeek = weekdays[now.getDay()]
 
-    const prompt = `Сьогоднішня дата: ${todayStr}. День тижня: ${currentDayOfWeek}. Поточний час: ${currentTimeStr}. 
+    const prompt = `Сьогоднішня дата за Києвом: ${todayStr}. День тижня: ${currentDayOfWeek}. Поточний час у Києві: ${currentTimeStr}. 
 Проаналізуй цей текст, розбий його на окремі плани, якщо їх там декілька, та обчисли правильний день, час і тривалість: "${text}"`
 
     const payload = {
@@ -54,12 +54,13 @@ export async function POST(req: Request) {
 5. Визначення пріоритету:
    - Якщо вжито слова "важливий", "найважливіший", "терміново", "важливе", "пріоритет" — ОБОВ'ЯЗКОВО виставляй priority = 1 (High).
    - Інакше 2 (Medium), 3 (Low), 4 (None).
-6. Категорія: inbox, work, personal, fitness, study.`,
+6. Якщо користувач каже фрази типу "підзадачі:", "а саме зробити:", вкладай ці кроки у масив subtasks відповідної справи.
+7. Категорія: inbox, work, personal, fitness, study.`,
           },
         ],
       },
       generationConfig: {
-        temperature: 0,
+        temperature: 0.1,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'OBJECT',
@@ -89,9 +90,9 @@ export async function POST(req: Request) {
       },
     }
 
-    // Основна спроба обраною моделлю
+    // Спроба викликати справжню обрану модель
     let geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${realModel}:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -99,11 +100,11 @@ export async function POST(req: Request) {
       }
     )
 
-    // Страховка 1: Якщо обрана модель перевищила ліміт RPD, пробуємо gemini-3.1-flash-lite (500 RPD)
-    if (!geminiRes.ok && activeModel !== 'gemini-3.1-flash-lite') {
-      console.warn(`Model ${activeModel} failed, retrying with gemini-3.1-flash-lite...`)
+    // Fallback 1: gemini-2.0-flash-lite
+    if (!geminiRes.ok && realModel !== 'gemini-2.0-flash-lite') {
+      console.warn(`Model ${realModel} failed, retrying with gemini-2.0-flash-lite...`)
       geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -112,11 +113,11 @@ export async function POST(req: Request) {
       )
     }
 
-    // Страховка 2: gemini-3.5-flash-lite (500 RPD)
+    // Fallback 2: gemini-1.5-flash
     if (!geminiRes.ok) {
-      console.warn(`Fallback to gemini-3.5-flash-lite...`)
+      console.warn(`Fallback to gemini-1.5-flash...`)
       geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
