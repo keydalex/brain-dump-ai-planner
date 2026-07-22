@@ -36,6 +36,7 @@ interface Task {
   category: string
   duration: number
   dueDate?: string
+  timeSlot?: string
   isCarriedOver: boolean
   subtasks?: Task[]
 }
@@ -752,6 +753,37 @@ export default function Home() {
                       />
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-2 gap-2 border-t border-[#232326] pt-2">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Час (timeSlot):</span>
+                      <input
+                        type="text"
+                        value={t.timeSlot || ''}
+                        onChange={(e) => {
+                          const updated = [...draftTasks]
+                          updated[idx].timeSlot = e.target.value
+                          setDraftTasks(updated)
+                        }}
+                        placeholder="напр. 18:20-18:55"
+                        className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#FFAE58]"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Дата (due date):</span>
+                      <input
+                        type="date"
+                        value={t.dueDate || ''}
+                        onChange={(e) => {
+                          const updated = [...draftTasks]
+                          updated[idx].dueDate = e.target.value
+                          setDraftTasks(updated)
+                        }}
+                        className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#FFAE58]"
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -826,6 +858,11 @@ export default function Home() {
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
+                        {task.timeSlot && (
+                          <span className="text-[10px] bg-[#FFAE58]/10 text-[#FFAE58] px-1.5 py-0.5 rounded font-extrabold shrink-0 tracking-wider">
+                            {task.timeSlot}
+                          </span>
+                        )}
                         <span
                           className={`text-xs font-medium text-white truncate ${
                             isDone ? 'line-through text-[#8E8E93]' : ''

@@ -84,6 +84,7 @@ export async function POST(req: Request) {
             category: t.category || 'inbox',
             duration: t.duration ? Number(t.duration) : 30,
             dueDate: targetDate,
+            timeSlot: t.timeSlot || null,
             subtasks: t.subtasks && t.subtasks.length > 0 ? {
               create: t.subtasks.map((st: string) => ({
                 userId: user.id,
@@ -102,7 +103,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, tasks: createdTasks })
     }
 
-    const { title, notes, priority, category, duration, dueDate, parentId } = body
+    const { title, notes, priority, category, duration, dueDate, parentId, timeSlot } = body
 
     if (!title || title.trim() === '') {
       return NextResponse.json({ error: 'Назва завдання є обов\'язковою' }, { status: 400 })
@@ -117,6 +118,7 @@ export async function POST(req: Request) {
         category: category || 'inbox',
         duration: duration ? Number(duration) : 30,
         dueDate: dueDate ? new Date(dueDate) : new Date(),
+        timeSlot: timeSlot || null,
         parentId: parentId || null,
       },
       include: {
@@ -136,7 +138,7 @@ export async function PATCH(req: Request) {
     const user = await resolveUser()
 
     const body = await req.json()
-    const { id, status, title, priority, category, duration, dueDate, isCarriedOver } = body
+    const { id, status, title, priority, category, duration, dueDate, isCarriedOver, timeSlot } = body
 
     if (!id) {
       return NextResponse.json({ error: 'ID завдання є обов\'язковим' }, { status: 400 })
@@ -158,6 +160,7 @@ export async function PATCH(req: Request) {
     if (duration !== undefined) updateData.duration = Number(duration)
     if (dueDate !== undefined) updateData.dueDate = dueDate ? new Date(dueDate) : null
     if (isCarriedOver !== undefined) updateData.isCarriedOver = isCarriedOver
+    if (timeSlot !== undefined) updateData.timeSlot = timeSlot
 
     const updatedTask = await prisma.task.update({
       where: { id },

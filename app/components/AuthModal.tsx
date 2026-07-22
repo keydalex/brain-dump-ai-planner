@@ -103,12 +103,39 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
           </button>
         </form>
 
-        <div className="mt-4 text-center">
+        <div className="mt-4 text-center flex flex-col gap-2.5">
           <button
             onClick={() => setIsLogin(!isLogin)}
             className="text-xs text-[#8E8E93] hover:text-white transition-colors"
           >
             {isLogin ? 'Немає акаунту? Реєстрація' : 'Вже є акаунт? Увійти'}
+          </button>
+
+          <div className="border-t border-[#232326] my-1" />
+
+          <button
+            type="button"
+            onClick={async () => {
+              setLoading(true)
+              setError('')
+              try {
+                const res = await fetch('/api/auth/demo', { method: 'POST' })
+                const data = await res.json()
+                if (res.ok && data.success) {
+                  onSuccess(data.user)
+                  onClose()
+                } else {
+                  throw new Error(data.error || 'Помилка запуску демо')
+                }
+              } catch (err: any) {
+                setError(err.message)
+              } finally {
+                setLoading(false)
+              }
+            }}
+            className="w-full py-3 bg-[#FFAE58]/10 hover:bg-[#FFAE58]/20 text-[#FFAE58] border border-[#FFAE58]/20 rounded-xl font-bold text-xs transition-all active:scale-95"
+          >
+            ⚡ Спробувати Демо-режим (В один клік)
           </button>
         </div>
       </div>
