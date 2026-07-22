@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { formatLocalDate } from '@/lib/date'
 
 export async function POST(req: Request) {
   try {
@@ -51,7 +50,7 @@ export async function POST(req: Request) {
 Профіль енергії: "${energyProfile || 'morning'}".
 
 Проаналізуй вказівку та онови список завдань:
-1. Якщо користувач явно просить вилучити/прибрати конкретну справу (наприклад "прибери тренування"), познач isDeleted: true.
+1. Якщо користувач каже "прибери повністю", "не вийде взагалі", "видали", "скасуй", "прибери [назва]" — ОБОВ'ЯЗКОВО познач isDeleted: true для відповідного завдання.
 2. Якщо попросив перенести справу (наприклад "перенеси уроки на завтра" або "на 2 дні"), вкажи moveToDaysAhead (наприклад 1 для завтра, 2 для післязавтра).
 3. Для справ, що залишаються на сьогодні, перерахуй тривалість (compressedDuration) та створи послідовний timeSlot ("HH:MM - HH:MM") починаючи з ${currentTimeStr}.
 
@@ -69,7 +68,7 @@ export async function POST(req: Request) {
           systemInstruction: {
             parts: [
               {
-                text: `Ти — персональний асистент-планувальник. Чітко виконуй команди користувача (прибери, стисни, перенеси на пізніше/раніше/інший день). Повертай відповідь строго в JSON.`,
+                text: `Ти — персональний асистент-планувальник. Виконуй команди видалення ("прибери повністю", "видали"), перенесення та стиснення. Повертай відповідь строго в JSON.`,
               },
             ],
           },
@@ -102,9 +101,7 @@ export async function POST(req: Request) {
     )
 
     if (!geminiRes.ok) {
-      const errText = await geminiRes.text()
-      console.error('Reschedule Gemini Error:', errText)
-      return NextResponse.json({ error: 'Помилка зв\'язку з AI або перевищено ліміт запитів. Спробуйте ще раз за хвилину.' }, { status: 502 })
+      return NextResponse.json({ error: 'Помилка зв\'язку з AI. Спробуйте ще раз.' }, { status: 502 })
     }
 
     const geminiData = await geminiRes.json()

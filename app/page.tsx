@@ -209,7 +209,6 @@ export default function Home() {
 
   const processAudioRecording = async (blob: Blob) => {
     setIsProcessing(true)
-    setProcessStatus('🎙️ Розпізнаємо голос...')
 
     try {
       const formData = new FormData()
@@ -222,29 +221,21 @@ export default function Home() {
       })
       const transcribeData = await transcribeRes.json()
 
-      if (!transcribeData.text) {
-        throw new Error('Не вдалося розпізнати мову або аудіо порожнє')
-      }
-
-      setProcessStatus(`✨ "${transcribeData.text}". AI розбирає...`)
-
-      const parseRes = await fetch('/api/parse-task', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: transcribeData.text, model: selectedModel }),
-      })
-      const parseData = await parseRes.json()
-      if (parseData.drafts) {
-        setDraftTasks(parseData.drafts)
-      } else if (parseData.error) {
-        alert(`Помилка AI: ${parseData.error}`)
+      if (transcribeData.text) {
+        const parseRes = await fetch('/api/parse-task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: transcribeData.text, model: selectedModel }),
+        })
+        const parseData = await parseRes.json()
+        if (parseData.drafts) {
+          setDraftTasks(parseData.drafts)
+        }
       }
     } catch (err: any) {
-      console.error(err)
-      alert(err.message || 'Помилка мережі чи розпізнавання голосу')
+      console.error('Audio processing error:', err)
     } finally {
       setIsProcessing(false)
-      setProcessStatus('')
     }
   }
 
@@ -633,10 +624,10 @@ export default function Home() {
           {/* Красива прямокутна кнопка Форс-Мажор на всю ширину */}
           <button
             onClick={() => setShowRescheduleModal(true)}
-            className="w-full py-2.5 bg-gradient-to-r from-[#FF5E5E]/15 via-[#FFAE58]/20 to-[#FF5E5E]/15 hover:from-[#FF5E5E]/25 hover:to-[#FFAE58]/30 border border-[#FFAE58]/30 text-[#FFAE58] font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.99] mt-2.5"
+            className="w-full py-2.5 bg-gradient-to-r from-[#FF5E5E]/20 via-[#FFAE58]/20 to-[#FF5E5E]/20 hover:from-[#FF5E5E]/30 hover:to-[#FFAE58]/30 border border-[#FF5E5E]/40 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-md transition-all active:scale-[0.99] mt-2.5"
           >
-            <Zap className="w-4 h-4 animate-pulse text-[#FFAE58]" />
-            ⚡ Екстрений Форс-Мажор Перепланувальник
+            <span className="text-sm animate-bounce">🚨</span>
+            <span>Форс-мажор</span>
           </button>
 
           <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-[#232326] pt-2">
