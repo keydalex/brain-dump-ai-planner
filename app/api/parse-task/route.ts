@@ -19,7 +19,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'GEMINI_API_KEY не налаштовано' }, { status: 500 })
     }
 
-    // Встановлюємо обрану модель з 4 найкращих на скріншоті
+    // Використовуємо лише високолімітні 500 RPD Lite моделі
     const activeModel = model || 'gemini-3.1-flash-lite'
 
     const todayStr = formatLocalDate()
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
       },
     }
 
-    // Спроба обраною моделлю з вашої панелі
+    // Спроба 1: Обрана 500 RPD модель
     let geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`,
       {
@@ -95,11 +95,11 @@ export async function POST(req: Request) {
       }
     )
 
-    // Страховка 1: gemini-3.1-flash-lite (500 RPD)
-    if (!geminiRes.ok && activeModel !== 'gemini-3.1-flash-lite') {
-      console.warn(`Model ${activeModel} failed, retrying with gemini-3.1-flash-lite...`)
+    // Страховка 1: gemini-3.5-flash-lite (500 RPD)
+    if (!geminiRes.ok && activeModel !== 'gemini-3.5-flash-lite') {
+      console.warn(`Model ${activeModel} failed, retrying with gemini-3.5-flash-lite...`)
       geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -108,11 +108,11 @@ export async function POST(req: Request) {
       )
     }
 
-    // Страховка 2: gemini-3.5-flash-lite (500 RPD)
+    // Страховка 2: gemini-3.1-flash-lite (500 RPD)
     if (!geminiRes.ok) {
-      console.warn(`Fallback to gemini-3.5-flash-lite...`)
+      console.warn(`Fallback to gemini-3.1-flash-lite...`)
       geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
