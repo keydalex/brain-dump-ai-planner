@@ -486,6 +486,7 @@ export default function Home() {
           origin: { y: 0.6 }
         })
         setDraftTasks(null)
+        setInputText('')
         fetchTasks()
       }
     } catch (err) {
@@ -1227,62 +1228,48 @@ export default function Home() {
       {/* Модалка Форс-Мажору (AI Reschedule Dialog) */}
       {showRescheduleModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-[#161618] border border-[#FFAE58] w-full max-w-sm rounded-3xl p-6 relative flex flex-col shadow-2xl">
-            <h2 className="text-base font-bold text-white mb-2 flex items-center gap-2">
-              <Zap className="w-5 h-5 text-[#FFAE58] animate-pulse" />
-              ⚡ AI Форс-Мажор Перепланування
+          <div className="bg-[#161618] border border-[#FF5E5E]/40 w-full max-w-sm rounded-3xl p-5 relative flex flex-col shadow-2xl">
+            <h2 className="text-base font-bold text-white mb-3 flex items-center gap-2">
+              <span className="text-lg animate-bounce">🚨</span>
+              <span>Форс-мажор</span>
             </h2>
-            <p className="text-xs text-[#8E8E93] mb-4">
-              Опиши AI, що трапилось, і він перебудує твій розклад на сьогодні.
-            </p>
 
             <div className="flex flex-col gap-3.5">
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-[11px] text-[#8E8E93]">Що сталося? (обов'язково)</label>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="text-[11px] text-[#8E8E93] font-medium">Що сталося?</label>
                   <button
                     onClick={isRecordingModal ? stopRecordingModal : startRecordingModal}
-                    className={`p-2 rounded-xl text-xs flex items-center justify-center transition-all ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
                       isRecordingModal
-                        ? 'bg-[#FF5E5E] text-white animate-pulse shadow-md shadow-[#FF5E5E]/30'
-                        : 'bg-[#1C1C1E] text-[#FFAE58] border border-[#232326]'
+                        ? 'bg-[#FF5E5E] text-white animate-pulse shadow-[#FF5E5E]/40'
+                        : 'bg-[#1C1C1E] text-[#FFAE58] border border-[#FFAE58]/30 hover:bg-[#FFAE58]/10'
                     }`}
                     title="Надиктувати ситуацію"
                   >
-                    <Mic className="w-4 h-4" />
+                    <Mic className="w-3.5 h-3.5" />
+                    <span>{isRecordingModal ? 'Запис...' : '🎙️ Надиктувати'}</span>
                   </button>
                 </div>
                 <textarea
                   value={rescheduleSituation}
                   onChange={(e) => setRescheduleSituation(e.target.value)}
-                  placeholder="Опиши що сталося (наприклад: 'прибери тренування', 'стисни розклад на 2 години', 'перенеси уроки на завтра')..."
-                  className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FFAE58] h-20 resize-none"
+                  placeholder="Опиши що сталося (наприклад: 'прибери силові тренування', 'зроби з зала перерву', 'зсунь розклад на годину')..."
+                  className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FF5E5E] h-24 resize-none"
                 />
-              </div>
-
-              <div>
-                <label className="text-[11px] text-[#8E8E93] block mb-1">Стратегія перепланування:</label>
-                <select
-                  value={rescheduleStrategy}
-                  onChange={(e) => setRescheduleStrategy(e.target.value)}
-                  className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none"
-                >
-                  <option value="compress">✂️ Спресувати та пришвидшити поточні справи</option>
-                  <option value="defer">📅 Перенести неважливі справи (P3/P4) на завтра</option>
-                </select>
               </div>
 
               <button
                 onClick={handleReschedule}
                 disabled={isRescheduling}
-                className="w-full mt-2 py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white rounded-xl font-bold text-xs transition-all active:scale-95 disabled:opacity-40"
+                className="w-full mt-1 py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white rounded-xl font-bold text-xs transition-all active:scale-95 disabled:opacity-40 shadow-md shadow-[#FF5E5E]/20"
               >
                 {isRescheduling ? 'AI оптимізує розклад...' : '⚡ Перебудувати розклад'}
               </button>
 
               <button
                 onClick={() => setShowRescheduleModal(false)}
-                className="w-full py-3 bg-[#232326] text-[#8E8E93] rounded-xl font-semibold text-xs active:scale-95"
+                className="w-full py-2.5 bg-[#232326] text-[#8E8E93] rounded-xl font-semibold text-xs active:scale-95"
               >
                 Скасувати
               </button>
