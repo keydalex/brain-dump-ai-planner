@@ -167,7 +167,22 @@ export default function Home() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      mediaRecorderRef.current = new MediaRecorder(stream)
+      
+      let mimeType = 'audio/webm'
+      if (!MediaRecorder.isTypeSupported('audio/webm')) {
+        if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeType = 'audio/mp4'
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          mimeType = 'audio/ogg'
+        } else {
+          mimeType = ''
+        }
+      }
+
+      mediaRecorderRef.current = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream)
+
       audioChunksRef.current = []
 
       mediaRecorderRef.current.ondataavailable = (e) => {
@@ -177,14 +192,17 @@ export default function Home() {
       }
 
       mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        processAudioRecording(audioBlob)
+        const recordedBlob = new Blob(audioChunksRef.current, {
+          type: mediaRecorderRef.current?.mimeType || 'audio/webm',
+        })
+        processAudioRecording(recordedBlob)
       }
 
-      mediaRecorderRef.current.start()
+      mediaRecorderRef.current.start(100)
       setIsRecording(true)
     } catch (err) {
-      alert('Не вдалося отримати доступ до мікрофона')
+      console.error('Microphone error:', err)
+      alert('Не вдалося отримати доступ до мікрофона. Перевірте дозволи у браузері.')
     }
   }
 
@@ -208,11 +226,18 @@ export default function Home() {
   }
 
   const processAudioRecording = async (blob: Blob) => {
+    if (!blob || blob.size === 0) {
+      alert('Аудіозапис виявився порожнім. Надиктуйте ще раз.')
+      return
+    }
+
     setIsProcessing(true)
+    setProcessStatus('🎙️ Розпізнаємо голос...')
 
     try {
+      const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
       const formData = new FormData()
-      formData.append('file', blob, 'recording.webm')
+      formData.append('file', blob, `recording.${ext}`)
       formData.append('model', sttModel)
 
       const transcribeRes = await fetch('/api/audio/transcribe', {
@@ -221,21 +246,33 @@ export default function Home() {
       })
       const transcribeData = await transcribeRes.json()
 
-      if (transcribeData.text) {
-        const parseRes = await fetch('/api/parse-task', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: transcribeData.text, model: selectedModel }),
-        })
-        const parseData = await parseRes.json()
-        if (parseData.drafts) {
-          setDraftTasks(parseData.drafts)
-        }
+      if (!transcribeRes.ok || !transcribeData.text) {
+        throw new Error(transcribeData.error || 'Не вдалося розпізнати мову')
+      }
+
+      const text = transcribeData.text.trim()
+      setInputText(text)
+
+      setProcessStatus('✨ AI створює список завдань...')
+
+      const parseRes = await fetch('/api/parse-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, model: selectedModel }),
+      })
+      const parseData = await parseRes.json()
+
+      if (parseData.drafts && parseData.drafts.length > 0) {
+        setDraftTasks(parseData.drafts)
+      } else if (parseData.error) {
+        alert(`Помилка аналізу AI: ${parseData.error}`)
       }
     } catch (err: any) {
       console.error('Audio processing error:', err)
+      alert(`Помилка: ${err.message || 'Спробуйте ще раз'}`)
     } finally {
       setIsProcessing(false)
+      setProcessStatus('')
     }
   }
 
