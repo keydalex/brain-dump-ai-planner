@@ -74,6 +74,18 @@ export default function Home() {
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3.6-flash')
   const [draftTasks, setDraftTasks] = useState<any[] | null>(null)
 
+  const [energyProfile, setEnergyProfile] = useState<string>('morning')
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false)
+  const [rescheduleSituation, setRescheduleSituation] = useState('')
+  const [rescheduleStrategy, setRescheduleStrategy] = useState('compress')
+
+  useEffect(() => {
+    const savedProfile = localStorage.getItem('energyProfile')
+    if (savedProfile) {
+      setEnergyProfile(savedProfile)
+    }
+  }, [])
+
   // Отримання сесії користувача при завантаженні
   useEffect(() => {
     fetch('/api/auth/me')
@@ -238,10 +250,20 @@ export default function Home() {
   const handleReschedule = async () => {
     setIsRescheduling(true)
     try {
-      const res = await fetch('/api/reschedule', { method: 'POST' })
+      const res = await fetch('/api/reschedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          situation: rescheduleSituation,
+          strategy: rescheduleStrategy,
+          energyProfile,
+        }),
+      })
       const data = await res.json()
       if (data.success) {
-        alert('⚡ AI успішно перепланував твій день у зв\'язку з форс-мажором!')
+        alert('⚡ AI успішно перепланував твій день відповідно до твоєї ситуації!')
+        setShowRescheduleModal(false)
+        setRescheduleSituation('')
         fetchTasks()
       }
     } catch (err) {
@@ -483,11 +505,10 @@ export default function Home() {
             </div>
 
             <button
-              onClick={handleReschedule}
-              disabled={isRescheduling}
+              onClick={() => setShowRescheduleModal(true)}
               className="text-[10px] bg-[#FFAE58]/15 text-[#FFAE58] hover:bg-[#FFAE58]/25 font-bold px-2 py-1 rounded-lg flex items-center gap-1 transition-all active:scale-95"
             >
-              <Zap className={`w-3 h-3 ${isRescheduling ? 'animate-bounce' : ''}`} />
+              <Zap className="w-3 h-3 animate-pulse" />
               Форс-Мажор
             </button>
           </div>
@@ -604,6 +625,29 @@ export default function Home() {
                   </button>
                 )}
               </div>
+            </div>
+
+            {/* Карточка налаштувань продуктивності */}
+            <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
+              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-[#FFAE58]" />
+                Профіль продуктивності (Енергія)
+              </h3>
+              <p className="text-xs text-[#8E8E93] mb-3">
+                Обери, в який час ти найбільш продуктивний, щоб AI автоматично планував складні справи туди:
+              </p>
+
+              <select
+                value={energyProfile}
+                onChange={(e) => {
+                  setEnergyProfile(e.target.value)
+                  localStorage.setItem('energyProfile', e.target.value)
+                }}
+                className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none"
+              >
+                <option value="morning">🌅 Ранок — складні справи планувати на ранок</option>
+                <option value="evening">🌌 Вечір — складні справи планувати на вечір</option>
+              </select>
             </div>
 
             {/* Карточка Telegram-бота */}
@@ -958,6 +1002,60 @@ export default function Home() {
         onClose={() => setShowAuthModal(false)}
         onSuccess={(u) => setUser(u)}
       />
+
+      {/* Модалка Форс-Мажору (AI Reschedule Dialog) */}
+      {showRescheduleModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="bg-[#161618] border border-[#FFAE58] w-full max-w-sm rounded-3xl p-6 relative flex flex-col shadow-2xl">
+            <h2 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-[#FFAE58] animate-pulse" />
+              ⚡ AI Форс-Мажор Перепланування
+            </h2>
+            <p className="text-xs text-[#8E8E93] mb-4">
+              Опиши AI, що трапилось, і він перебудує твій розклад на сьогодні.
+            </p>
+
+            <div className="flex flex-col gap-3.5">
+              <div>
+                <label className="text-[11px] text-[#8E8E93] block mb-1">Що сталося?</label>
+                <textarea
+                  value={rescheduleSituation}
+                  onChange={(e) => setRescheduleSituation(e.target.value)}
+                  placeholder="наприклад: 'я захворів', 'залишилось всього 2 години', 'потрібно звільнити час після 18:00'"
+                  className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FFAE58] h-20 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] text-[#8E8E93] block mb-1">Стратегія перепланування:</label>
+                <select
+                  value={rescheduleStrategy}
+                  onChange={(e) => setRescheduleStrategy(e.target.value)}
+                  className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none"
+                >
+                  <option value="compress">✂️ Спресувати та пришвидшити поточні справи</option>
+                  <option value="defer">📅 Перенести неважливі справи (P3/P4) на завтра</option>
+                </select>
+              </div>
+
+              <button
+                onClick={handleReschedule}
+                disabled={isRescheduling}
+                className="w-full mt-2 py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white rounded-xl font-bold text-xs transition-all active:scale-95 disabled:opacity-50"
+              >
+                {isRescheduling ? 'AI оптимізує розклад...' : '⚡ Перебудувати розклад'}
+              </button>
+
+              <button
+                onClick={() => setShowRescheduleModal(false)}
+                className="w-full py-3 bg-[#232326] text-[#8E8E93] rounded-xl font-semibold text-xs active:scale-95"
+              >
+                Скасувати
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

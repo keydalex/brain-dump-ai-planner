@@ -9,6 +9,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Необхідно увійти у систему' }, { status: 401 })
     }
 
+    const { situation, strategy, energyProfile } = await req.json()
+
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
     const todayEnd = new Date()
@@ -35,9 +37,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'GEMINI_API_KEY не налаштовано' }, { status: 500 })
     }
 
-    const prompt = `У мене форс-мажор і обмаль часу! Оціни та переплануй ці завдання на сьогодні: ${JSON.stringify(
+    const prompt = `У мене форс-мажор! 
+Опис ситуації: "${situation || 'екстрена зміна планів'}"
+Обрана стратегія: "${strategy || 'оптимізувати наявний час'}"
+Профіль енергії: "${energyProfile || 'morning'}" (якщо morning, плануй складні справи P1/P2 на ранок, якщо evening — на вечір).
+
+Переплануй ці завдання на сьогодні: ${JSON.stringify(
       activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority }))
-    )}. Скороти тривалість важких задач або перенеси найменш важливі (P4) на завтра.`
+    )}.`
 
     const geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
@@ -49,7 +56,7 @@ export async function POST(req: Request) {
           systemInstruction: {
             parts: [
               {
-                text: 'Ти — експерт з перепланування завдань у форс-мажорних ситуаціях. Оптимізуй час і поверни оновлений списком завдань у форматі JSON.',
+                text: `Ти — експерт з перепланування завдань у форс-мажорних ситуаціях. Оціни ситуацію, стисни тривалість (compressedDuration) важких задач або перенеси найменш важливі (P3/P4) на завтра (moveToTomorrow: true), відповідно до стратегії користувача та його профілю енергії. Поверни оновлені завдання в JSON.`,
               },
             ],
           },
