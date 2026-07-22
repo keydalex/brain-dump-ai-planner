@@ -584,23 +584,15 @@ export default function Home() {
 
       <main className="p-4 flex-1 flex flex-col">
         {/* Головне поле вводу думок */}
-        <div className="bg-[#161618] border border-[#232326] rounded-2xl p-3 mb-3 shadow-lg">
+        <div className="bg-[#161618] border border-[#232326] rounded-2xl p-3.5 mb-3 shadow-lg">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-[#FF5E5E]" />
               <span className="text-xs font-semibold text-white">Що в голові?</span>
             </div>
-
-            <button
-              onClick={() => setShowRescheduleModal(true)}
-              className="text-[10px] bg-[#FFAE58]/15 text-[#FFAE58] hover:bg-[#FFAE58]/25 font-bold px-2 py-1 rounded-lg flex items-center gap-1 transition-all active:scale-95"
-            >
-              <Zap className="w-3 h-3 animate-pulse" />
-              Форс-Мажор
-            </button>
           </div>
 
-          <div className="flex items-start gap-2">
+          <div className="flex items-center gap-2">
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
@@ -610,35 +602,42 @@ export default function Home() {
                   handleSendText()
                 }
               }}
-              placeholder="Надиктуй або вкинь думку (підтримує декілька рядків)..."
+              placeholder="Надиктуй або вкинь думку..."
               disabled={isProcessing}
               rows={2}
-              className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FF5E5E] min-h-[64px] max-h-[140px] resize-none overflow-y-auto"
+              className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FF5E5E] min-h-[56px] max-h-[120px] resize-none overflow-y-auto"
             />
 
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                className={`p-2.5 rounded-xl transition-all active:scale-95 flex items-center justify-center ${
-                  isRecording
-                    ? 'bg-[#FF5E5E] text-white animate-pulse shadow-lg shadow-[#FF5E5E]/40'
-                    : 'bg-[#1C1C1E] text-[#A78BFA] hover:text-white border border-[#232326]'
-                }`}
-                title="Голосовий ввід (Whisper STT)"
-              >
-                <Mic className="w-4 h-4" />
-              </button>
+            <button
+              onClick={isRecording ? stopRecording : startRecording}
+              className={`p-3 rounded-xl transition-all active:scale-95 flex items-center justify-center shrink-0 ${
+                isRecording
+                  ? 'bg-[#FF5E5E] text-white animate-pulse shadow-lg shadow-[#FF5E5E]/40'
+                  : 'bg-[#1C1C1E] text-[#A78BFA] hover:text-white border border-[#232326]'
+              }`}
+              title="Голосовий ввід"
+            >
+              <Mic className="w-4 h-4" />
+            </button>
 
-              <button
-                onClick={handleSendText}
-                disabled={isProcessing || !inputText.trim()}
-                className="p-2.5 bg-[#FF5E5E] text-white rounded-xl active:scale-95 disabled:opacity-40 flex items-center justify-center"
-                title="Відправити AI на розбір"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </div>
+            <button
+              onClick={handleSendText}
+              disabled={isProcessing || !inputText.trim()}
+              className="p-3 bg-[#FF5E5E] text-white rounded-xl active:scale-95 disabled:opacity-40 flex items-center justify-center shrink-0 shadow-md shadow-[#FF5E5E]/20"
+              title="Відправити AI на розбір"
+            >
+              <Send className="w-4 h-4" />
+            </button>
           </div>
+
+          {/* Красива прямокутна кнопка Форс-Мажор на всю ширину */}
+          <button
+            onClick={() => setShowRescheduleModal(true)}
+            className="w-full py-2.5 bg-gradient-to-r from-[#FF5E5E]/15 via-[#FFAE58]/20 to-[#FF5E5E]/15 hover:from-[#FF5E5E]/25 hover:to-[#FFAE58]/30 border border-[#FFAE58]/30 text-[#FFAE58] font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.99] mt-2.5"
+          >
+            <Zap className="w-4 h-4 animate-pulse text-[#FFAE58]" />
+            ⚡ Екстрений Форс-Мажор Перепланувальник
+          </button>
 
           <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-[#232326] pt-2">
             <div className="flex flex-wrap items-center gap-3 text-[10px] text-[#8E8E93]">
@@ -916,10 +915,11 @@ export default function Home() {
                       <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Тривалість (хв):</span>
                       <input
                         type="number"
-                        value={t.duration}
+                        value={t.duration === 0 ? '' : t.duration}
                         onChange={(e) => {
                           const updated = [...draftTasks]
-                          updated[idx].duration = Number(e.target.value)
+                          const val = e.target.value === '' ? 0 : Number(e.target.value)
+                          updated[idx].duration = val
                           setDraftTasks(updated)
                         }}
                         className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#FFAE58]"
@@ -1190,23 +1190,23 @@ export default function Home() {
             <div className="flex flex-col gap-3.5">
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-[11px] text-[#8E8E93]">Що сталося? (текстом або голосом)</label>
+                  <label className="text-[11px] text-[#8E8E93]">Що сталося? (обов'язково)</label>
                   <button
                     onClick={isRecordingModal ? stopRecordingModal : startRecordingModal}
-                    className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all ${
+                    className={`p-2 rounded-xl text-xs flex items-center justify-center transition-all ${
                       isRecordingModal
-                        ? 'bg-[#FF5E5E] text-white animate-pulse'
+                        ? 'bg-[#FF5E5E] text-white animate-pulse shadow-md shadow-[#FF5E5E]/30'
                         : 'bg-[#1C1C1E] text-[#FFAE58] border border-[#232326]'
                     }`}
+                    title="Надиктувати ситуацію"
                   >
-                    <Mic className="w-3 h-3" />
-                    <span>{isRecordingModal ? 'Запис...' : 'Надиктувати'}</span>
+                    <Mic className="w-4 h-4" />
                   </button>
                 </div>
                 <textarea
                   value={rescheduleSituation}
                   onChange={(e) => setRescheduleSituation(e.target.value)}
-                  placeholder="наприклад: 'прибери тренування', 'стисни розклад на 2 години', 'перенеси уроки на завтра'..."
+                  placeholder="Опиши що сталося (наприклад: 'прибери тренування', 'стисни розклад на 2 години', 'перенеси уроки на завтра')..."
                   className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FFAE58] h-20 resize-none"
                 />
               </div>
@@ -1225,8 +1225,8 @@ export default function Home() {
 
               <button
                 onClick={handleReschedule}
-                disabled={isRescheduling}
-                className="w-full mt-2 py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white rounded-xl font-bold text-xs transition-all active:scale-95 disabled:opacity-50"
+                disabled={isRescheduling || !rescheduleSituation.trim()}
+                className="w-full mt-2 py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white rounded-xl font-bold text-xs transition-all active:scale-95 disabled:opacity-40"
               >
                 {isRescheduling ? 'AI оптимізує розклад...' : '⚡ Перебудувати розклад'}
               </button>
