@@ -59,9 +59,6 @@ export default function HeatmapCalendar({ selectedDate, onSelectDate, taskSummar
           <button onClick={() => changeMonth(1)} className="p-1 text-[#636366] hover:text-white rounded-lg hover:bg-[#232326] transition-all">
             <ChevronRight className="w-4 h-4" />
           </button>
-          <button onClick={() => changeYear(1)} className="p-1 text-[#636366] hover:text-white rounded-lg hover:bg-[#232326] transition-all">
-            <ChevronsRight className="w-4 h-4" />
-          </button>
         </div>
       </div>
 

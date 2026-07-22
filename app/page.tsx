@@ -117,6 +117,8 @@ export default function Home() {
   const [quickAddTitle, setQuickAddTitle] = useState('')
   const [quickAddTime, setQuickAddTime] = useState('')
   const [quickAddPriority, setQuickAddPriority] = useState(4)
+  const [quickAddCategory, setQuickAddCategory] = useState('work')
+  const [quickAddDuration, setQuickAddDuration] = useState(30)
   const [isQuickAdding, setIsQuickAdding] = useState(false)
 
   useEffect(() => {
@@ -487,14 +489,15 @@ export default function Home() {
     if (!quickAddTitle.trim()) return
     setIsQuickAdding(true)
     try {
+      const cat = selectedCategory !== 'all' ? selectedCategory : quickAddCategory || 'inbox'
       const res = await fetch('/api/tasks', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tasks: [{
             title: quickAddTitle.trim(),
             priority: quickAddPriority,
-            category: 'inbox',
-            duration: 30,
+            category: cat,
+            duration: Number(quickAddDuration) || 30,
             dueDate: selectedDate || formatLocalDate(),
             timeSlot: quickAddTime || null,
           }]
@@ -511,6 +514,26 @@ export default function Home() {
         showToast('✅ Задачу додано!', 'success')
       }
     } catch { showToast('Помилка', 'error') } finally { setIsQuickAdding(false) }
+  }
+
+  // Обмін місцями двох задач з дзеркальною зміною timeSlot
+  const handleSwapTasks = async (taskA: Task, taskB: Task) => {
+    const timeA = taskA.timeSlot
+    const timeB = taskB.timeSlot
+
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id === taskA.id) return { ...t, timeSlot: timeB }
+        if (t.id === taskB.id) return { ...t, timeSlot: timeA }
+        return t
+      })
+    )
+
+    await Promise.all([
+      fetch('/api/tasks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: taskA.id, timeSlot: timeB }) }),
+      fetch('/api/tasks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: taskB.id, timeSlot: timeA }) }),
+    ])
+    showToast('🔄 Задачі поміняно місцями!', 'success')
   }
 
   const filteredTasks = (
@@ -599,18 +622,21 @@ export default function Home() {
         {activeTab !== 'settings' && (
           <div id="input-area" className="bg-[#161618] border border-[#232326] rounded-2xl p-3 shadow-lg">
           <div className="flex items-start gap-2">
-            {/* Велика кнопка мікрофона */}
+            {/* Велика стильна кнопка мікрофона (у 2 рази більша з неоновим сяйвом) */}
             <button
               id="mic-btn"
               onClick={isRecording ? stopRecording : startRecording}
-              className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center transition-all active:scale-90 ${
+              className={`shrink-0 w-20 h-20 rounded-3xl flex items-center justify-center transition-all active:scale-90 relative ${
                 isRecording
-                  ? 'bg-[#FF5E5E] shadow-xl shadow-[#FF5E5E]/50 animate-pulse scale-105'
-                  : 'bg-gradient-to-br from-[#FF5E5E] to-[#A78BFA] shadow-md shadow-[#FF5E5E]/30 hover:scale-105'
+                  ? 'bg-gradient-to-tr from-[#FF5E5E] via-[#FF3B3B] to-[#FFAE58] shadow-2xl shadow-[#FF5E5E]/80 animate-pulse scale-105 border-2 border-white/40'
+                  : 'bg-gradient-to-tr from-[#FF5E5E] via-[#A78BFA] to-[#5EA5FF] shadow-xl shadow-[#FF5E5E]/40 hover:scale-105 hover:shadow-2xl border border-white/20'
               }`}
               title={isRecording ? 'Зупинити запис' : 'Голосовий ввід'}
             >
-              <Mic className="w-5 h-5 text-white" />
+              <Mic className={`transition-transform ${isRecording ? 'w-9 h-9 text-white animate-bounce' : 'w-8 h-8 text-white'}`} />
+              {isRecording && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#10B981] rounded-full border-2 border-[#161618] animate-ping" />
+              )}
             </button>
 
             <div className="flex-1 min-w-0">
@@ -872,13 +898,22 @@ export default function Home() {
                   </button>
                 </div>
               ) : (
-                filteredTasks.map((task) => {
+                filteredTasks.map((task, idx) => {
                   const isDone = task.status === 'done'
                   const isExpanded = !!expandedTaskIds[task.id]
                   const isEditing = editingTaskId === task.id
                   const pc = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG[4]
                   const doneCount = task.subtasks?.filter((s) => s.status === 'done').length || 0
                   const totalSubs = task.subtasks?.length || 0
+
+                  // Перевірка на пересікання часу з іншими задачами
+                  const hasConflict = !!(
+                    task.timeSlot &&
+                    filteredTasks.some((other) => other.id !== task.id && other.timeSlot && other.timeSlot === task.timeSlot)
+                  )
+
+                  const prevTask = idx > 0 ? filteredTasks[idx - 1] : null
+                  const nextTask = idx < filteredTasks.length - 1 ? filteredTasks[idx + 1] : null
 
                   return (
                     <div key={task.id}
@@ -887,18 +922,41 @@ export default function Home() {
                       } rounded-2xl overflow-hidden transition-all ${isDone ? 'opacity-55' : ''}`}
                     >
                       {/* Основний рядок */}
-                      <div className="flex items-start gap-3 p-3">
-                        {/* Чекбокс — крайній лівий */}
-                        <button onClick={() => toggleTaskStatus(task)} className="shrink-0 mt-0.5 text-[#636366] hover:text-[#FF5E5E] transition-colors">
-                          {isDone ? <CheckCircle2 className="w-5 h-5 text-[#FF5E5E]" /> : <Circle className="w-5 h-5" />}
-                        </button>
+                      <div className="flex items-start gap-2.5 p-3">
+                        {/* Чекбокс та розгортання підзадач — КРАЙНІ ЛІВІ */}
+                        <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                          <button onClick={() => toggleTaskStatus(task)} className="text-[#636366] hover:text-[#FF5E5E] transition-colors">
+                            {isDone ? <CheckCircle2 className="w-5 h-5 text-[#FF5E5E]" /> : <Circle className="w-5 h-5" />}
+                          </button>
+
+                          {totalSubs > 0 && (
+                            <button
+                              onClick={() => setExpandedTaskIds({ ...expandedTaskIds, [task.id]: !isExpanded })}
+                              className="p-1 text-[#5EA5FF] hover:text-white transition-colors"
+                              title="Розгорнути підзадачі"
+                            >
+                              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+                          )}
+                        </div>
 
                         {/* Весь текст + мета */}
                         <div className="flex-1 min-w-0">
-                          {/* Час + перенесено */}
+                          {/* Час + конфлікт + перенесено */}
                           <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                             {task.timeSlot && (
-                              <span className="text-[10px] bg-[#FFAE58]/15 text-[#FFAE58] px-1.5 py-0.5 rounded-md font-bold tracking-wide">{task.timeSlot}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold tracking-wide ${
+                                hasConflict
+                                  ? 'bg-[#FF5E5E]/20 text-[#FF5E5E] border border-[#FF5E5E]/40 animate-pulse'
+                                  : 'bg-[#FFAE58]/15 text-[#FFAE58]'
+                              }`}>
+                                {task.timeSlot}
+                              </span>
+                            )}
+                            {hasConflict && (
+                              <span className="text-[9px] bg-[#FF5E5E]/20 text-[#FF5E5E] px-1.5 py-0.5 rounded-md font-bold border border-[#FF5E5E]/40" title="Конфлікт часу — 2 справи на один час!">
+                                ⚠️ Пересікання часу
+                              </span>
                             )}
                             {task.isCarriedOver && (
                               <span className="text-[9px] bg-[#FFAE58]/10 text-[#FFAE58]/80 px-1.5 py-0.5 rounded-md border border-[#FFAE58]/20">перенесено</span>
@@ -956,6 +1014,18 @@ export default function Home() {
                           <option value={4}>⚪ P4</option>
                         </select>
 
+                        {/* Кнопки підйому / опускання справи (обмін місцями + дзеркальний timeSlot) */}
+                        {prevTask && (
+                          <button onClick={() => handleSwapTasks(task, prevTask)} className="p-1 text-[#636366] hover:text-[#FFAE58] text-[10px] rounded hover:bg-[#1C1C1E]" title="Пересунути вгору (поміняти час)">
+                            ▲
+                          </button>
+                        )}
+                        {nextTask && (
+                          <button onClick={() => handleSwapTasks(task, nextTask)} className="p-1 text-[#636366] hover:text-[#FFAE58] text-[10px] rounded hover:bg-[#1C1C1E]" title="Пересунути вниз (поміняти час)">
+                            ▼
+                          </button>
+                        )}
+
                         <div className="flex-1" />
 
                         {/* Google Calendar */}
@@ -967,16 +1037,6 @@ export default function Home() {
                         >
                           <CalendarIcon className="w-3.5 h-3.5" />
                         </a>
-
-                        {/* Підзадачі toggle */}
-                        {totalSubs > 0 && (
-                          <button
-                            onClick={() => setExpandedTaskIds({ ...expandedTaskIds, [task.id]: !isExpanded })}
-                            className="p-1.5 text-[#636366] hover:text-white transition-colors rounded-lg hover:bg-[#1C1C1E]"
-                          >
-                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          </button>
-                        )}
 
                         {/* Видалити */}
                         <button onClick={() => deleteTask(task.id)} className="p-1.5 text-[#636366] hover:text-[#FF5E5E] transition-colors rounded-lg hover:bg-[#1C1C1E]">
@@ -1006,7 +1066,7 @@ export default function Home() {
               )}
             </div>
 
-            {/* Кнопка "+" — швидке додавання */}
+            {/* Кнопка "+" — швидке додавання з автозаповненою категорією та тривалістю */}
             {!showQuickAdd ? (
               <button onClick={() => setShowQuickAdd(true)} className="w-full py-3 border-2 border-dashed border-[#232326] hover:border-[#FF5E5E]/50 text-[#636366] hover:text-[#FF5E5E] rounded-2xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-98 mt-1">
                 <Plus className="w-4 h-4" /> Швидко додати задачу
@@ -1019,7 +1079,7 @@ export default function Home() {
                   placeholder="Назва задачі..."
                   className="w-full bg-transparent text-white text-sm focus:outline-none"
                 />
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <input type="time" value={quickAddTime} onChange={(e) => setQuickAddTime(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
                   <select value={quickAddPriority} onChange={(e) => setQuickAddPriority(Number(e.target.value))} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none">
                     <option value={1}>🔴 P1</option>
@@ -1027,6 +1087,17 @@ export default function Home() {
                     <option value={3}>🔵 P3</option>
                     <option value={4}>⚪ P4</option>
                   </select>
+                  <select value={selectedCategory !== 'all' ? selectedCategory : quickAddCategory} onChange={(e) => setQuickAddCategory(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none capitalize">
+                    <option value="inbox">📥 Inbox</option>
+                    <option value="work">💻 Work</option>
+                    <option value="personal">👤 Personal</option>
+                    <option value="fitness">🏋️ Fitness</option>
+                    <option value="study">📚 Study</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="number" value={quickAddDuration} onChange={(e) => setQuickAddDuration(Number(e.target.value) || 30)} placeholder="хв" min={5} className="w-20 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
+                  <span className="text-[10px] text-[#636366]">хв за замовчуванням</span>
                   <div className="flex-1" />
                   <button onClick={handleQuickAdd} disabled={!quickAddTitle.trim() || isQuickAdding} className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-bold rounded-xl active:scale-95 disabled:opacity-40">
                     {isQuickAdding ? '...' : 'Додати'}
