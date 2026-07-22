@@ -19,13 +19,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'GEMINI_API_KEY не налаштовано' }, { status: 500 })
     }
 
-    // Мапінг вибраної моделі на справжні API моделі Google Gemini
-    let realModel = 'gemini-2.0-flash-lite'
-    if (model === 'gemini-2.0-flash' || model === 'gemini-3.5-flash') {
-      realModel = 'gemini-2.0-flash'
-    } else if (model === 'gemini-1.5-pro' || model === 'gemini-3.1-pro') {
-      realModel = 'gemini-1.5-pro'
-    }
+    // Встановлюємо обрану модель з 4 найкращих на скріншоті
+    const activeModel = model || 'gemini-3.1-flash-lite'
 
     const todayStr = formatLocalDate()
     const currentTimeStr = getKyivTimeStr()
@@ -90,9 +85,9 @@ export async function POST(req: Request) {
       },
     }
 
-    // Спроба викликати справжню обрану модель
+    // Спроба обраною моделлю з вашої панелі
     let geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${realModel}:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,11 +95,11 @@ export async function POST(req: Request) {
       }
     )
 
-    // Fallback 1: gemini-2.0-flash-lite
-    if (!geminiRes.ok && realModel !== 'gemini-2.0-flash-lite') {
-      console.warn(`Model ${realModel} failed, retrying with gemini-2.0-flash-lite...`)
+    // Страховка 1: gemini-3.1-flash-lite (500 RPD)
+    if (!geminiRes.ok && activeModel !== 'gemini-3.1-flash-lite') {
+      console.warn(`Model ${activeModel} failed, retrying with gemini-3.1-flash-lite...`)
       geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -113,11 +108,11 @@ export async function POST(req: Request) {
       )
     }
 
-    // Fallback 2: gemini-1.5-flash
+    // Страховка 2: gemini-3.5-flash-lite (500 RPD)
     if (!geminiRes.ok) {
-      console.warn(`Fallback to gemini-1.5-flash...`)
+      console.warn(`Fallback to gemini-3.5-flash-lite...`)
       geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

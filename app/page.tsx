@@ -690,9 +690,10 @@ export default function Home() {
               onChange={(e) => { setSelectedModel(e.target.value); localStorage.setItem('aiModel', e.target.value) }}
               className="bg-[#1C1C1E] border border-[#232326] text-[#8E8E93] text-[10px] px-1.5 py-2 rounded-xl focus:outline-none"
             >
-              <option value="gemini-2.0-flash-lite">⭐ Gemini 2.0 Flash Lite</option>
-              <option value="gemini-2.0-flash">⚡ Gemini 2.0 Flash</option>
-              <option value="gemini-1.5-pro">💎 Gemini 1.5 Pro (Мозок)</option>
+              <option value="gemini-3.1-flash-lite">⭐ Gemini 3.1 Flash Lite (500 RPD)</option>
+              <option value="gemini-3.6-flash">⚡ Gemini 3.6 Flash (Смарт)</option>
+              <option value="gemini-3.1-pro">🧠 Gemini 3.1 Pro (Мозок)</option>
+              <option value="gemini-3.5-flash-lite">🛡️ Gemini 3.5 Flash Lite (Страховка)</option>
             </select>
           </div>
         </div>
