@@ -1,5 +1,7 @@
 'use client'
 
+import { formatLocalDate } from '@/lib/date'
+
 interface WeekTabProps {
   selectedDate: string
   onSelectDate: (dateStr: string) => void
@@ -8,7 +10,7 @@ interface WeekTabProps {
 export default function WeekTab({ selectedDate, onSelectDate }: WeekTabProps) {
   const today = new Date()
   
-  // Генеруємо 7 днів почного тижня (з понеділка по неділю)
+  // Генеруємо 7 днів поточного тижня (з понеділка по неділю)
   const currentDayOfWeek = today.getDay()
   const mondayOffset = currentDayOfWeek === 0 ? -6 : 1 - currentDayOfWeek
   const monday = new Date(today)
@@ -23,7 +25,7 @@ export default function WeekTab({ selectedDate, onSelectDate }: WeekTabProps) {
   return (
     <div className="flex gap-2 overflow-x-auto no-scrollbar py-2 mb-4">
       {weekDays.map((d) => {
-        const dateStr = d.toISOString().split('T')[0]
+        const dateStr = formatLocalDate(d)
         const isSelected = dateStr === selectedDate
         const isToday = d.toDateString() === today.toDateString()
         const dayName = d.toLocaleDateString('uk-UA', { weekday: 'short' })

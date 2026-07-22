@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { formatLocalDate } from '@/lib/date'
 
 async function resolveUser() {
   let user = await getCurrentUser()
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
     const activeModel = model || 'gemini-3.6-flash'
 
     const now = new Date()
-    const todayStr = now.toISOString().split('T')[0]
+    const todayStr = formatLocalDate(now)
     const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     
     const weekdays = ['неділя', 'понеділок', 'вівторок', 'середа', 'четвер', 'п’ятниця', 'субота']

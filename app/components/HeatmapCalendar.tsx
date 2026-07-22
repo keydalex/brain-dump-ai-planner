@@ -1,4 +1,4 @@
-'use client'
+import { formatLocalDate } from '@/lib/date'
 
 interface TaskSummary {
   dueDate: string
@@ -58,7 +58,7 @@ export default function HeatmapCalendar({
 
         {daysArray.map((day) => {
           const dateObj = new Date(currentYear, currentMonth, day)
-          const dateStr = dateObj.toISOString().split('T')[0]
+          const dateStr = formatLocalDate(dateObj)
           const isToday = day === today.getDate()
           const isSelected = dateStr === selectedDate
 

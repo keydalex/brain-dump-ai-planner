@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { syncTaskToNotion } from '@/lib/notion'
+import { formatLocalDate } from '@/lib/date'
 
 export async function POST(req: Request) {
   try {
@@ -192,12 +193,12 @@ export async function POST(req: Request) {
     }
 
     // 4. Відправляємо в Gemini AI Parser для витягування структури кількох завдань
-    let tasksToCreate = [{ title: extractedText, priority: 4, category: 'inbox', duration: 30, dueDate: new Date().toISOString().split('T')[0], timeSlot: null, subtasks: [] }]
+    let tasksToCreate = [{ title: extractedText, priority: 4, category: 'inbox', duration: 30, dueDate: formatLocalDate(), timeSlot: null, subtasks: [] }]
 
     if (process.env.GEMINI_API_KEY) {
       const apiKey = process.env.GEMINI_API_KEY
       const now = new Date()
-      const todayStr = now.toISOString().split('T')[0]
+      const todayStr = formatLocalDate(now)
       const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       const weekdays = ['неділя', 'понеділок', 'вівторок', 'середа', 'четвер', 'п’ятниця', 'субота']
       const currentDayOfWeek = weekdays[now.getDay()]

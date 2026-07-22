@@ -41,6 +41,8 @@ interface Task {
   subtasks?: Task[]
 }
 
+import { formatLocalDate } from '@/lib/date'
+
 export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [loadingUser, setLoadingUser] = useState(true)
@@ -48,9 +50,7 @@ export default function Home() {
   const [showOnboarding, setShowOnboarding] = useState(false)
 
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'inbox' | 'settings'>('today')
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  )
+  const [selectedDate, setSelectedDate] = useState<string>(formatLocalDate())
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
 
   const [tasks, setTasks] = useState<Task[]>([])
@@ -114,7 +114,7 @@ export default function Home() {
       if (activeTab === 'inbox') {
         url += '?view=inbox'
       } else if (activeTab === 'today') {
-        url += `?date=${new Date().toISOString().split('T')[0]}`
+        url += `?date=${formatLocalDate()}`
       } else if (selectedDate) {
         url += `?date=${selectedDate}`
       }
