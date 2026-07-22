@@ -21,11 +21,13 @@ import {
   Share2,
   Calendar as CalendarIcon,
   X,
+  Plus,
+  Settings,
 } from 'lucide-react'
 import BottomNav from './components/BottomNav'
 import HeatmapCalendar from './components/HeatmapCalendar'
 import WeekTab from './components/WeekTab'
-import OnboardingModal from './components/OnboardingModal'
+import OnboardingTour from './components/OnboardingTour'
 import AuthModal from './components/AuthModal'
 import { formatLocalDate } from '@/lib/date'
 
@@ -49,6 +51,17 @@ interface Toast {
   type: 'success' | 'error' | 'info'
 }
 
+const PRIORITY_CONFIG: Record<number, { label: string; color: string; border: string; bg: string }> = {
+  1: { label: 'P1', color: '#FF5E5E', border: 'border-l-[#FF5E5E]', bg: 'bg-[#FF5E5E]/8' },
+  2: { label: 'P2', color: '#FFAE58', border: 'border-l-[#FFAE58]', bg: 'bg-[#FFAE58]/5' },
+  3: { label: 'P3', color: '#5EA5FF', border: 'border-l-[#5EA5FF]', bg: 'bg-[#5EA5FF]/5' },
+  4: { label: 'P4', color: '#636366', border: 'border-l-[#232326]', bg: '' },
+}
+
+const CATEGORY_EMOJI: Record<string, string> = {
+  inbox: '📥', work: '💻', personal: '👤', fitness: '🏋️', study: '📚',
+}
+
 export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [loadingUser, setLoadingUser] = useState(true)
@@ -67,18 +80,17 @@ export default function Home() {
   const [isRescheduling, setIsRescheduling] = useState(false)
   const [isSyncingNotion, setIsSyncingNotion] = useState(false)
 
-  // Toast notifications
+  // Toast
   const [toasts, setToasts] = useState<Toast[]>([])
   const showToast = useCallback((message: string, type: Toast['type'] = 'info') => {
     const id = Math.random().toString(36).substring(2)
     setToasts((prev) => [...prev, { id, message, type }])
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id))
-    }, 3500)
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3200)
   }, [])
 
-  // Аудіо запис (MediaRecorder)
+  // Recording
   const [isRecording, setIsRecording] = useState(false)
+  const [sendAnimating, setSendAnimating] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -95,29 +107,33 @@ export default function Home() {
   const [draftTasks, setDraftTasks] = useState<any[] | null>(null)
 
   const [sortBy, setSortBy] = useState<'time' | 'priority'>('time')
-
   const [energyProfile, setEnergyProfile] = useState<string>('morning')
   const [showRescheduleModal, setShowRescheduleModal] = useState(false)
   const [rescheduleSituation, setRescheduleSituation] = useState('')
-
   const [sttModel, setSttModel] = useState<string>('whisper-1')
+
+  // Quick add
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [quickAddTitle, setQuickAddTitle] = useState('')
+  const [quickAddTime, setQuickAddTime] = useState('')
+  const [quickAddPriority, setQuickAddPriority] = useState(4)
+  const [isQuickAdding, setIsQuickAdding] = useState(false)
 
   useEffect(() => {
     const savedProfile = localStorage.getItem('energyProfile')
     if (savedProfile) setEnergyProfile(savedProfile)
     const savedStt = localStorage.getItem('sttModel')
     if (savedStt) setSttModel(savedStt)
+    const savedModel = localStorage.getItem('aiModel')
+    if (savedModel) setSelectedModel(savedModel)
   }, [])
 
   useEffect(() => {
     fetch('/api/auth/me')
       .then((res) => res.json())
       .then((data) => {
-        if (data.user) {
-          setUser(data.user)
-        } else {
-          setShowAuthModal(true)
-        }
+        if (data.user) setUser(data.user)
+        else setShowAuthModal(true)
       })
       .finally(() => setLoadingUser(false))
   }, [])
@@ -126,24 +142,16 @@ export default function Home() {
     if (!user) return
     try {
       let url = '/api/tasks'
-      if (activeTab === 'inbox') {
-        url += '?view=inbox'
-      } else {
-        const date = selectedDate || formatLocalDate()
-        url += `?date=${date}`
-      }
-
+      if (activeTab === 'inbox') url += '?view=inbox'
+      else url += `?date=${selectedDate || formatLocalDate()}`
       const res = await fetch(url)
       const data = await res.json()
-      if (data.tasks) {
-        setTasks(data.tasks)
-      }
+      if (data.tasks) setTasks(data.tasks)
     } catch (err) {
       console.error('Fetch tasks error:', err)
     }
   }, [user, activeTab, selectedDate])
 
-  // Окремий fetch для heatmap — отримуємо к-сть задач з усіх дат
   const fetchAllSummaries = useCallback(async () => {
     if (!user) return
     try {
@@ -173,50 +181,80 @@ export default function Home() {
     }
   }, [user, activeTab, selectedDate])
 
-  // Надіслати текст в AI
   const handleSendText = async () => {
     if (!inputText.trim() || isProcessing) return
     setIsProcessing(true)
-    setProcessStatus('AI розбирає завдання...')
-
+    setProcessStatus('AI розбирає...')
     try {
       const res = await fetch('/api/parse-task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: inputText, model: selectedModel }),
       })
-
       const data = await res.json()
-      if (data.drafts && data.drafts.length > 0) {
+      if (data.drafts?.length > 0) {
         setDraftTasks(data.drafts)
         setInputText('')
       } else if (data.error) {
         showToast(`Помилка AI: ${data.error}`, 'error')
       }
-    } catch (err) {
-      showToast('Помилка зв\'язку з AI. Перевір інтернет.', 'error')
+    } catch {
+      showToast("Помилка зв'язку з AI", 'error')
     } finally {
       setIsProcessing(false)
       setProcessStatus('')
     }
   }
 
-  // Запис голосу
+  // Animate "send pressed" visually then process audio
+  const animateSendAndProcess = useCallback(async (blob: Blob) => {
+    setSendAnimating(true)
+    await new Promise((r) => setTimeout(r, 400))
+    setSendAnimating(false)
+    // Now process
+    if (!blob || blob.size === 0) {
+      showToast('Аудіо порожнє — спробуй ще раз', 'error')
+      return
+    }
+    setIsProcessing(true)
+    setProcessStatus('🎙️ Розпізнаємо голос...')
+    try {
+      const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
+      const formData = new FormData()
+      formData.append('file', blob, `rec.${ext}`)
+      formData.append('model', sttModel)
+
+      const transcribeRes = await fetch('/api/audio/transcribe', { method: 'POST', body: formData })
+      const transcribeData = await transcribeRes.json()
+      if (!transcribeRes.ok || !transcribeData.text) throw new Error(transcribeData.error || 'STT error')
+
+      const text = transcribeData.text.trim()
+      setInputText(text)
+      setProcessStatus('✨ AI складає план...')
+
+      const parseRes = await fetch('/api/parse-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, model: selectedModel }),
+      })
+      const parseData = await parseRes.json()
+      if (parseData.drafts?.length > 0) setDraftTasks(parseData.drafts)
+    } catch (err: any) {
+      console.error('Audio error:', err)
+    } finally {
+      setIsProcessing(false)
+      setProcessStatus('')
+    }
+  }, [sttModel, selectedModel, showToast])
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
       let mimeType = 'audio/webm'
       if (!MediaRecorder.isTypeSupported('audio/webm')) {
-        if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4'
-        else if (MediaRecorder.isTypeSupported('audio/ogg')) mimeType = 'audio/ogg'
-        else mimeType = ''
+        mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : ''
       }
-
-      mediaRecorderRef.current = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream)
-
+      mediaRecorderRef.current = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       audioChunksRef.current = []
 
       mediaRecorderRef.current.ondataavailable = (e) => {
@@ -229,19 +267,17 @@ export default function Home() {
 
       mediaRecorderRef.current.onstop = async () => {
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
-        const recordedBlob = new Blob(audioChunksRef.current, {
-          type: mediaRecorderRef.current?.mimeType || 'audio/webm',
-        })
-        processAudioRecording(recordedBlob)
+        stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current?.mimeType || 'audio/webm' })
+        animateSendAndProcess(blob)
       }
 
       mediaRecorderRef.current.start(100)
       setIsRecording(true)
-
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
       silenceTimerRef.current = setTimeout(() => stopRecording(), 7000)
-    } catch (err) {
-      showToast('Не вдалося отримати доступ до мікрофона. Перевірте дозволи в браузері.', 'error')
+    } catch {
+      showToast('Немає доступу до мікрофона. Перевір дозволи в браузері.', 'error')
     }
   }
 
@@ -249,7 +285,6 @@ export default function Home() {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop()
-      mediaRecorderRef.current.stream?.getTracks().forEach((t) => t.stop())
       setIsRecording(false)
     }
   }
@@ -264,60 +299,9 @@ export default function Home() {
         body: JSON.stringify({ sttModel: val }),
       })
     }
-    showToast(`STT модель змінено на ${val === 'whisper-1' ? 'Whisper-1' : 'GPT-4o Mini Audio'}`, 'success')
   }
 
-  const processAudioRecording = async (blob: Blob) => {
-    if (!blob || blob.size === 0) {
-      showToast('Аудіозапис виявився порожнім. Надиктуйте ще раз.', 'error')
-      return
-    }
-
-    setIsProcessing(true)
-    setProcessStatus('🎙️ Розпізнаємо голос...')
-
-    try {
-      const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
-      const formData = new FormData()
-      formData.append('file', blob, `recording.${ext}`)
-      formData.append('model', sttModel)
-
-      const transcribeRes = await fetch('/api/audio/transcribe', {
-        method: 'POST',
-        body: formData,
-      })
-      const transcribeData = await transcribeRes.json()
-
-      if (!transcribeRes.ok || !transcribeData.text) {
-        throw new Error(transcribeData.error || 'Не вдалося розпізнати мову')
-      }
-
-      const text = transcribeData.text.trim()
-      setInputText(text)
-      setProcessStatus('✨ AI створює список завдань...')
-
-      const parseRes = await fetch('/api/parse-task', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, model: selectedModel }),
-      })
-      const parseData = await parseRes.json()
-
-      if (parseData.drafts && parseData.drafts.length > 0) {
-        setDraftTasks(parseData.drafts)
-      } else if (parseData.error) {
-        showToast(`Помилка аналізу AI: ${parseData.error}`, 'error')
-      }
-    } catch (err: any) {
-      console.error('Audio processing error:', err)
-      // Не показуємо помилку alert — просто тихий лог. Якщо є текст в полі — нехай відправить вручну
-    } finally {
-      setIsProcessing(false)
-      setProcessStatus('')
-    }
-  }
-
-  // Modal recording
+  // Modal recording (for force majeure)
   const [isRecordingModal, setIsRecordingModal] = useState(false)
   const modalRecorderRef = useRef<MediaRecorder | null>(null)
   const modalChunksRef = useRef<Blob[]>([])
@@ -325,42 +309,26 @@ export default function Home() {
   const startRecordingModal = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      let mimeType = 'audio/webm'
-      if (!MediaRecorder.isTypeSupported('audio/webm')) {
-        if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4'
-        else mimeType = ''
-      }
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
       modalRecorderRef.current = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       modalChunksRef.current = []
-
-      modalRecorderRef.current.ondataavailable = (e) => {
-        if (e.data.size > 0) modalChunksRef.current.push(e.data)
-      }
-
+      modalRecorderRef.current.ondataavailable = (e) => { if (e.data.size > 0) modalChunksRef.current.push(e.data) }
       modalRecorderRef.current.onstop = async () => {
-        const blob = new Blob(modalChunksRef.current, { type: modalRecorderRef.current?.mimeType || 'audio/webm' })
         stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(modalChunksRef.current, { type: 'audio/webm' })
         try {
-          const formData = new FormData()
-          formData.append('file', blob, 'modal-recording.webm')
-          formData.append('model', sttModel)
-          const res = await fetch('/api/audio/transcribe', { method: 'POST', body: formData })
-          const data = await res.json()
-          if (data.text) {
-            setRescheduleSituation((prev) => (prev ? `${prev} ${data.text}` : data.text))
-          }
-        } catch (err) {
-          console.error('Modal transcribe error:', err)
-        }
+          const fd = new FormData()
+          fd.append('file', blob, 'modal.webm')
+          fd.append('model', sttModel)
+          const res = await fetch('/api/audio/transcribe', { method: 'POST', body: fd })
+          const d = await res.json()
+          if (d.text) setRescheduleSituation((p) => p ? `${p} ${d.text}` : d.text)
+        } catch {}
       }
-
       modalRecorderRef.current.start(100)
       setIsRecordingModal(true)
-    } catch (err) {
-      showToast('Не вдалося отримати доступ до мікрофона', 'error')
-    }
+    } catch { showToast('Немає доступу до мікрофона', 'error') }
   }
-
   const stopRecordingModal = () => {
     if (modalRecorderRef.current && isRecordingModal) {
       modalRecorderRef.current.stop()
@@ -370,56 +338,54 @@ export default function Home() {
 
   const toggleTaskStatus = async (task: Task) => {
     const newStatus = task.status === 'done' ? 'todo' : 'done'
-
     if (newStatus === 'done') {
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.7 },
-        colors: ['#FF5E5E', '#FFAE58', '#5EA5FF', '#10B981'],
-      })
-      showToast('✅ Зроблено! Так тримати!', 'success')
+      confetti({ particleCount: 60, spread: 50, origin: { y: 0.7 }, colors: ['#FF5E5E', '#FFAE58', '#5EA5FF'] })
     }
-
     setTasks(tasks.map((t) => (t.id === task.id ? { ...t, status: newStatus } : t)))
-
     await fetch('/api/tasks', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: task.id, status: newStatus }),
     })
+    fetchAllSummaries()
+  }
+
+  const toggleSubtaskStatus = async (parentId: string, sub: Task) => {
+    const newStatus = sub.status === 'done' ? 'todo' : 'done'
+    if (newStatus === 'done') {
+      confetti({ particleCount: 30, spread: 40, origin: { y: 0.7 }, colors: ['#A78BFA', '#5EA5FF'] })
+    }
+    setTasks(tasks.map((t) =>
+      t.id === parentId
+        ? { ...t, subtasks: t.subtasks?.map((s) => s.id === sub.id ? { ...s, status: newStatus } : s) }
+        : t
+    ))
+    await fetch('/api/tasks', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: sub.id, status: newStatus }),
+    })
   }
 
   const handleReschedule = async () => {
-    if (!rescheduleSituation.trim()) {
-      showToast('Опиши що сталося перед перебудовою розкладу', 'info')
-      return
-    }
+    if (!rescheduleSituation.trim()) { showToast('Опиши що сталося', 'info'); return }
     setIsRescheduling(true)
     try {
       const res = await fetch('/api/reschedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          situation: rescheduleSituation,
-          energyProfile,
-        }),
+        body: JSON.stringify({ situation: rescheduleSituation, energyProfile }),
       })
       const data = await res.json()
-      // Завжди закриваємо модалку незалежно від результату
       setShowRescheduleModal(false)
       setRescheduleSituation('')
       await fetchTasks()
       await fetchAllSummaries()
-      if (data.success) {
-        showToast('⚡ Розклад успішно перебудовано!', 'success')
-      } else {
-        showToast(data.message || data.error || 'Перебудова завершена', 'info')
-      }
-    } catch (err) {
+      showToast(data.success ? '⚡ Розклад перебудовано!' : data.message || 'Готово', data.success ? 'success' : 'info')
+    } catch {
       setShowRescheduleModal(false)
       setRescheduleSituation('')
-      showToast('Помилка зв\'язку з AI. Спробуй ще раз.', 'error')
+      showToast("Помилка зв'язку з AI", 'error')
     } finally {
       setIsRescheduling(false)
     }
@@ -430,86 +396,54 @@ export default function Home() {
     try {
       const res = await fetch('/api/notion/sync', { method: 'POST', body: JSON.stringify({}) })
       const data = await res.json()
-      if (data.success) {
-        showToast(data.message || '🎉 Завдання синхронізовано з Notion!', 'success')
-      } else {
-        showToast(data.error || 'Помилка синхронізації', 'error')
-      }
-    } catch (err) {
-      showToast('Помилка синхронізації з Notion', 'error')
-    } finally {
-      setIsSyncingNotion(false)
-    }
+      showToast(data.success ? (data.message || 'Синхронізовано з Notion!') : (data.error || 'Помилка'), data.success ? 'success' : 'error')
+    } catch { showToast('Помилка синхронізації', 'error') } finally { setIsSyncingNotion(false) }
   }
 
   const deleteTask = async (id: string) => {
     setTasks(tasks.filter((t) => t.id !== id))
     await fetch(`/api/tasks?id=${id}`, { method: 'DELETE' })
-    showToast('Завдання видалено', 'info')
+    fetchAllSummaries()
   }
 
   const handleSubscribe = async () => {
     try {
       const res = await fetch('/api/payment/checkout', { method: 'POST' })
       const data = await res.json()
-      if (data.pageUrl) {
-        window.location.href = data.pageUrl
-      } else if (data.success) {
-        setUser({ ...user, isPremium: true })
-        showToast('🎉 Преміум підписку активовано!', 'success')
-      }
-    } catch (err) {
-      showToast('Помилка обробки платежу', 'error')
-    }
+      if (data.pageUrl) window.location.href = data.pageUrl
+      else if (data.success) { setUser({ ...user, isPremium: true }); showToast('🎉 Преміум активовано!', 'success') }
+    } catch { showToast('Помилка платежу', 'error') }
   }
 
   const handleGeneratePairCode = async () => {
     try {
       const res = await fetch('/api/auth/pair-code', { method: 'POST' })
       const data = await res.json()
-      if (data.pairCode) {
-        setTelegramPairCode(data.pairCode)
-      }
-    } catch (err) {
-      showToast('Помилка генерації коду для Telegram', 'error')
-    }
+      if (data.pairCode) setTelegramPairCode(data.pairCode)
+    } catch { showToast('Помилка генерації коду', 'error') }
   }
 
   const handleCreateNotionDB = async () => {
-    if (!parentPageId.trim()) {
-      showToast('Введіть ID батьківської сторінки Notion', 'error')
-      return
-    }
+    if (!parentPageId.trim()) { showToast('Введіть ID сторінки Notion', 'error'); return }
     setIsCreatingNotionDB(true)
     try {
       const res = await fetch('/api/notion/create-db', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parentPageId: parentPageId.trim() }),
       })
       const data = await res.json()
-      if (data.success) {
-        showToast(data.message || 'База Notion успішно створена!', 'success')
-        setParentPageId('')
-      } else {
-        showToast(data.error || 'Помилка створення бази Notion', 'error')
-      }
-    } catch (err) {
-      showToast('Помилка запиту до Notion', 'error')
-    } finally {
-      setIsCreatingNotionDB(false)
-    }
+      if (data.success) { showToast(data.message || 'Базу Notion створено!', 'success'); setParentPageId('') }
+      else showToast(data.error || 'Помилка', 'error')
+    } catch { showToast('Помилка запиту до Notion', 'error') } finally { setIsCreatingNotionDB(false) }
   }
 
   const handleConfirmDrafts = async () => {
-    if (!draftTasks || draftTasks.length === 0) return
+    if (!draftTasks?.length) return
     setIsProcessing(true)
-    setProcessStatus('Зберігаємо завдання...')
-
+    setProcessStatus('Зберігаємо...')
     try {
       const res = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tasks: draftTasks }),
       })
       const data = await res.json()
@@ -517,18 +451,11 @@ export default function Home() {
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } })
         setDraftTasks(null)
         setInputText('')
-        showToast(`🎉 ${data.tasks?.length || draftTasks.length} завдань додано до плану!`, 'success')
+        showToast(`🎉 ${data.tasks?.length || draftTasks.length} справ додано!`, 'success')
         await fetchTasks()
         await fetchAllSummaries()
-      } else {
-        showToast(data.error || 'Помилка збереження', 'error')
-      }
-    } catch (err) {
-      showToast('Помилка збереження завдань', 'error')
-    } finally {
-      setIsProcessing(false)
-      setProcessStatus('')
-    }
+      } else showToast(data.error || 'Помилка', 'error')
+    } catch { showToast('Помилка збереження', 'error') } finally { setIsProcessing(false); setProcessStatus('') }
   }
 
   const handleActivateDemo = async () => {
@@ -540,53 +467,67 @@ export default function Home() {
         setShowAuthModal(false)
         await fetchTasks()
         await fetchAllSummaries()
-        showToast('🎉 Демо активовано! Надиктуй голосом свою першу задачу.', 'success')
+        showToast('🎉 Демо активовано! Надиктуй голосом першу задачу.', 'success')
       }
-    } catch (err) {
-      showToast('Помилка активації демо-режиму', 'error')
-    }
+    } catch { showToast('Помилка демо-режиму', 'error') }
   }
 
   const handleSaveEditTitle = async (task: Task) => {
-    if (!editingTitle.trim()) return
+    if (!editingTitle.trim()) { setEditingTaskId(null); return }
     const newTitle = editingTitle.trim()
     setTasks(tasks.map((t) => (t.id === task.id ? { ...t, title: newTitle } : t)))
     setEditingTaskId(null)
     await fetch('/api/tasks', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: task.id, title: newTitle }),
     })
   }
 
-  // Фільтрація та сортування задач
-  const filteredTasks = (selectedCategory === 'all'
-    ? tasks
-    : tasks.filter((t) => t.category.toLowerCase() === selectedCategory.toLowerCase())
-  ).sort((a, b) => {
-    if (sortBy === 'priority') {
-      return a.priority - b.priority
-    }
-    const timeA = a.timeSlot ? a.timeSlot.split('-')[0].trim() : '99:99'
-    const timeB = b.timeSlot ? b.timeSlot.split('-')[0].trim() : '99:99'
-    return timeA.localeCompare(timeB)
-  })
+  const handleQuickAdd = async () => {
+    if (!quickAddTitle.trim()) return
+    setIsQuickAdding(true)
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tasks: [{
+            title: quickAddTitle.trim(),
+            priority: quickAddPriority,
+            category: 'inbox',
+            duration: 30,
+            dueDate: selectedDate || formatLocalDate(),
+            timeSlot: quickAddTime || null,
+          }]
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setQuickAddTitle('')
+        setQuickAddTime('')
+        setQuickAddPriority(4)
+        setShowQuickAdd(false)
+        await fetchTasks()
+        await fetchAllSummaries()
+        showToast('✅ Задачу додано!', 'success')
+      }
+    } catch { showToast('Помилка', 'error') } finally { setIsQuickAdding(false) }
+  }
 
-  // Для heatmap — рахуємо тільки незавершені задачі
-  const taskSummaries: Record<string, { count: number; hasHighPriority: boolean }> = {}
-  tasks.forEach((t) => {
-    if (t.dueDate && t.status === 'todo') {
-      const d = t.dueDate.split('T')[0]
-      if (!taskSummaries[d]) taskSummaries[d] = { count: 0, hasHighPriority: false }
-      taskSummaries[d].count += 1
-      if (t.priority === 1) taskSummaries[d].hasHighPriority = true
-    }
+  const filteredTasks = (
+    selectedCategory === 'all' ? tasks : tasks.filter((t) => t.category === selectedCategory)
+  ).sort((a, b) => {
+    if (sortBy === 'priority') return a.priority - b.priority
+    const tA = a.timeSlot ? a.timeSlot.split('-')[0].trim() : '99:99'
+    const tB = b.timeSlot ? b.timeSlot.split('-')[0].trim() : '99:99'
+    return tA.localeCompare(tB)
   })
 
   if (loadingUser) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-        <Sparkles className="w-8 h-8 text-[#FF5E5E] animate-spin mb-3" />
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#FF5E5E] to-[#FFAE58] flex items-center justify-center mb-4 animate-pulse shadow-lg shadow-[#FF5E5E]/30">
+          <Sparkles className="w-6 h-6 text-white" />
+        </div>
         <span className="text-xs text-[#8E8E93]">Завантажуємо твій планер...</span>
       </div>
     )
@@ -595,794 +536,536 @@ export default function Home() {
   return (
     <div className="flex-1 flex flex-col pb-20 relative">
 
-      {/* Toast система — замість alert() */}
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none w-full max-w-sm px-4">
+      {/* Toast */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] flex flex-col gap-2 pointer-events-none w-full max-w-sm px-4">
         {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`w-full px-4 py-3 rounded-2xl text-xs font-semibold text-white shadow-xl backdrop-blur-md animate-in slide-in-from-top-2 duration-200 flex items-center gap-2 ${
-              toast.type === 'success'
-                ? 'bg-[#10B981]/90 border border-[#10B981]/40'
-                : toast.type === 'error'
-                ? 'bg-[#FF5E5E]/90 border border-[#FF5E5E]/40'
-                : 'bg-[#1C1C1E]/95 border border-[#232326]'
-            }`}
-          >
-            <span>
-              {toast.type === 'success' ? '✅' : toast.type === 'error' ? '❌' : 'ℹ️'}
-            </span>
+          <div key={toast.id} className={`w-full px-4 py-3 rounded-2xl text-xs font-semibold text-white shadow-2xl flex items-center gap-2 ${
+            toast.type === 'success' ? 'bg-[#10B981]/95 border border-[#10B981]/30'
+            : toast.type === 'error' ? 'bg-[#FF5E5E]/95 border border-[#FF5E5E]/30'
+            : 'bg-[#1C1C1E]/98 border border-[#232326]'
+          }`}>
+            {toast.type === 'success' ? '✅' : toast.type === 'error' ? '❌' : 'ℹ️'}
             <span className="flex-1">{toast.message}</span>
           </div>
         ))}
       </div>
 
-      <header className="p-4 flex justify-between items-center border-b border-[#232326] bg-[#0B0B0C]/80 backdrop-blur-md sticky top-0 z-40">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#FF5E5E] to-[#FFAE58] flex items-center justify-center font-bold text-white text-xs shadow-md">
+      {/* Header */}
+      <header className="px-4 py-3 flex justify-between items-center border-b border-[#232326] bg-[#0B0B0C]/90 backdrop-blur-md sticky top-0 z-40">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#FF5E5E] to-[#FFAE58] flex items-center justify-center font-black text-white text-xs shadow-md shadow-[#FF5E5E]/30">
             BD
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-1.5">
               Brain Dump AI
               {user?.isPremium && (
-                <span className="bg-gradient-to-r from-[#FF5E5E] to-[#A78BFA] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
-                  PRO
-                </span>
+                <span className="bg-gradient-to-r from-[#FF5E5E] to-[#A78BFA] text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase">PRO</span>
               )}
             </h1>
-            <span className="text-[10px] text-[#8E8E93]">{user ? user.email : 'Гість'}</span>
+            <span className="text-[10px] text-[#636366] leading-none">{user ? (user.email?.includes('demo_') ? 'Демо-режим' : user.email) : 'Гість'}</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
-          <button
-            onClick={handleSyncNotion}
-            disabled={isSyncingNotion}
-            className="p-2 text-[#A78BFA] hover:text-white rounded-xl hover:bg-[#161618] transition-all"
-            title="Синхронізувати з Notion"
-          >
+        <div className="flex items-center gap-0.5">
+          <button onClick={handleSyncNotion} disabled={isSyncingNotion} className="p-2 text-[#A78BFA] hover:text-white rounded-xl hover:bg-[#161618] transition-all" title="Синхронізувати з Notion">
             <Share2 className={`w-4 h-4 ${isSyncingNotion ? 'animate-spin' : ''}`} />
           </button>
-
-          <button
-            onClick={() => setShowOnboarding(true)}
-            className="p-2 text-[#8E8E93] hover:text-white rounded-xl hover:bg-[#161618] transition-all"
-            title="Гід по додатку"
-          >
+          {/* ? кнопка — spotlight onboarding */}
+          <button id="onboarding-btn" onClick={() => setShowOnboarding(true)} className="p-2 text-[#8E8E93] hover:text-white rounded-xl hover:bg-[#161618] transition-all" title="Гід по додатку">
             <HelpCircle className="w-4 h-4" />
           </button>
-
           {user ? (
-            <div className="flex items-center gap-1.5">
-              {user.email?.includes('demo_') && (
-                <span className="text-[10px] bg-[#FFAE58]/15 text-[#FFAE58] px-2 py-1 rounded-lg font-bold">
-                  Demo
-                </span>
-              )}
-              <button
-                onClick={async () => {
-                  await fetch('/api/auth/logout', { method: 'POST' })
-                  setUser(null)
-                  setTasks([])
-                  setShowAuthModal(true)
-                }}
-                className="p-2 text-[#8E8E93] hover:text-[#FF5E5E] rounded-xl hover:bg-[#161618] transition-all"
-                title="Вийти"
-              >
+            <div className="flex items-center gap-1">
+              <button onClick={async () => {
+                await fetch('/api/auth/logout', { method: 'POST' })
+                setUser(null); setTasks([]); setShowAuthModal(true)
+              }} className="p-2 text-[#8E8E93] hover:text-[#FF5E5E] rounded-xl hover:bg-[#161618] transition-all" title="Вийти">
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={handleActivateDemo}
-                className="px-2.5 py-1.5 bg-[#FFAE58]/20 text-[#FFAE58] hover:bg-[#FFAE58]/30 text-xs font-bold rounded-xl active:scale-95 transition-all"
-              >
-                Спробувати Демо
-              </button>
-              <button
-                onClick={() => setShowAuthModal(true)}
-                className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-semibold rounded-xl active:scale-95"
-              >
-                Увійти
-              </button>
+            <div className="flex items-center gap-1.5 ml-1">
+              <button onClick={handleActivateDemo} className="px-2.5 py-1.5 bg-[#FFAE58]/20 text-[#FFAE58] text-xs font-bold rounded-xl active:scale-95 transition-all">Демо</button>
+              <button onClick={() => setShowAuthModal(true)} className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-semibold rounded-xl active:scale-95">Увійти</button>
             </div>
           )}
         </div>
       </header>
 
-      <main className="p-4 flex-1 flex flex-col">
-        {/* Поле вводу думок */}
-        <div className="bg-[#161618] border border-[#232326] rounded-2xl p-3.5 mb-3 shadow-lg">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-[#FF5E5E]" />
-              <span className="text-xs font-semibold text-white">Що в голові?</span>
-            </div>
-            {processStatus && (
-              <div className="text-[10px] text-[#A78BFA] flex items-center gap-1 animate-pulse">
-                <RefreshCw className="w-3 h-3 animate-spin" />
-                <span>{processStatus}</span>
-              </div>
-            )}
-          </div>
+      <main className="p-4 flex-1 flex flex-col gap-3">
 
-          <div className="flex items-center gap-2">
-            <textarea
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSendText()
-                }
-              }}
-              placeholder="Надиктуй або вкинь думку..."
-              disabled={isProcessing}
-              rows={2}
-              className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FF5E5E] min-h-[56px] max-h-[120px] resize-none overflow-y-auto"
-            />
-
+        {/* Поле вводу */}
+        <div id="input-area" className="bg-[#161618] border border-[#232326] rounded-2xl p-3 shadow-lg">
+          <div className="flex items-start gap-2">
+            {/* Велика кнопка мікрофона */}
             <button
+              id="mic-btn"
               onClick={isRecording ? stopRecording : startRecording}
-              className={`p-3 rounded-xl transition-all active:scale-95 flex items-center justify-center shrink-0 ${
+              className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center transition-all active:scale-90 ${
                 isRecording
-                  ? 'bg-[#FF5E5E] text-white animate-pulse shadow-lg shadow-[#FF5E5E]/40'
-                  : 'bg-[#1C1C1E] text-[#A78BFA] hover:text-white border border-[#232326]'
+                  ? 'bg-[#FF5E5E] shadow-xl shadow-[#FF5E5E]/50 animate-pulse scale-105'
+                  : 'bg-gradient-to-br from-[#FF5E5E] to-[#A78BFA] shadow-md shadow-[#FF5E5E]/30 hover:scale-105'
               }`}
               title={isRecording ? 'Зупинити запис' : 'Голосовий ввід'}
             >
-              <Mic className="w-4 h-4" />
+              <Mic className="w-5 h-5 text-white" />
             </button>
 
+            <div className="flex-1 min-w-0">
+              <textarea
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText() }
+                }}
+                placeholder={isRecording ? '🔴 Запис іде...' : 'Що в голові? Надиктуй або напиши...'}
+                disabled={isProcessing || isRecording}
+                rows={2}
+                className="w-full bg-transparent text-white text-sm rounded-xl focus:outline-none min-h-[48px] max-h-[100px] resize-none placeholder:text-[#636366]"
+              />
+              {processStatus && (
+                <div className="text-[10px] text-[#A78BFA] flex items-center gap-1 animate-pulse mt-0.5">
+                  <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+                  <span>{processStatus}</span>
+                </div>
+              )}
+            </div>
+
             <button
+              id="send-btn"
               onClick={handleSendText}
               disabled={isProcessing || !inputText.trim()}
-              className="p-3 bg-[#FF5E5E] text-white rounded-xl active:scale-95 disabled:opacity-40 flex items-center justify-center shrink-0 shadow-md shadow-[#FF5E5E]/20"
-              title="Відправити AI на розбір"
+              className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-90 mt-1 ${
+                sendAnimating
+                  ? 'bg-[#10B981] scale-90 shadow-lg shadow-[#10B981]/40'
+                  : inputText.trim()
+                  ? 'bg-[#FF5E5E] shadow-md shadow-[#FF5E5E]/30'
+                  : 'bg-[#232326] opacity-40'
+              }`}
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4 text-white" />
             </button>
           </div>
 
-          {/* Кнопка Форс-Мажор */}
-          <button
-            onClick={() => setShowRescheduleModal(true)}
-            className="w-full py-2.5 bg-gradient-to-r from-[#FF5E5E]/20 via-[#FFAE58]/20 to-[#FF5E5E]/20 hover:from-[#FF5E5E]/30 hover:to-[#FFAE58]/30 border border-[#FF5E5E]/40 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-md transition-all active:scale-[0.99] mt-2.5"
-          >
-            <span className="text-sm animate-bounce">🚨</span>
-            <span>Форс-мажор</span>
-          </button>
+          {/* Форс-мажор + моделі */}
+          <div className="flex items-center gap-2 mt-2.5 pt-2 border-t border-[#1C1C1E]">
+            <button
+              id="force-majeure-btn"
+              onClick={() => setShowRescheduleModal(true)}
+              className="flex-1 py-2 bg-gradient-to-r from-[#FF5E5E]/15 to-[#FFAE58]/15 hover:from-[#FF5E5E]/25 hover:to-[#FFAE58]/25 border border-[#FF5E5E]/30 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-98"
+            >
+              <span>🚨</span> Форс-мажор
+            </button>
 
-          {/* Вибір AI та STT моделей */}
-          <div className="mt-2.5 flex flex-wrap items-center gap-3 border-t border-[#232326] pt-2 text-[10px] text-[#8E8E93]">
-            <div className="flex items-center gap-1">
-              <span>🧠</span>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-2 py-1 rounded-lg focus:outline-none"
-              >
-                <option value="gemini-3.1-flash-lite">⭐ Gemini 3.1 Flash Lite</option>
-                <option value="gemini-3.5-flash-lite">⚡ Gemini 3.5 Flash Lite</option>
-                <option value="gemini-3.5-flash">🔥 Gemini 3.5 Flash</option>
-                <option value="gemini-2.5-flash">💎 Gemini 2.5 Flash</option>
-                <option value="gemini-3.1-pro">🧠 Gemini 3.1 Pro</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <span>🎙️</span>
-              <select
-                value={sttModel}
-                onChange={(e) => handleSttModelChange(e.target.value)}
-                className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-2 py-1 rounded-lg focus:outline-none"
-              >
-                <option value="whisper-1">Whisper-1</option>
-                <option value="gpt-4o-mini">GPT-4o Mini</option>
-              </select>
-            </div>
+            <select
+              value={selectedModel}
+              onChange={(e) => { setSelectedModel(e.target.value); localStorage.setItem('aiModel', e.target.value) }}
+              className="bg-[#1C1C1E] border border-[#232326] text-[#8E8E93] text-[10px] px-1.5 py-2 rounded-xl focus:outline-none"
+            >
+              <option value="gemini-3.1-flash-lite">🧠 Lite</option>
+              <option value="gemini-3.5-flash">⚡ Flash</option>
+              <option value="gemini-2.5-flash">💎 Pro</option>
+            </select>
           </div>
         </div>
 
         {/* Фільтр категорій */}
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar mb-3">
-          {['all', 'inbox', 'work', 'personal', 'fitness', 'study'].map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1 rounded-xl text-[11px] font-semibold capitalize whitespace-nowrap transition-all ${
-                selectedCategory === cat
-                  ? 'bg-[#FF5E5E] text-white'
-                  : 'bg-[#161618] text-[#8E8E93] border border-[#232326]'
+        <div id="category-filter" className="flex gap-1.5 overflow-x-auto no-scrollbar">
+          {[
+            { key: 'all', label: 'Всі' },
+            { key: 'work', label: '💻 Work' },
+            { key: 'personal', label: '👤 Personal' },
+            { key: 'fitness', label: '🏋️ Fitness' },
+            { key: 'study', label: '📚 Study' },
+          ].map(({ key, label }) => (
+            <button key={key} onClick={() => setSelectedCategory(key)}
+              className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold whitespace-nowrap transition-all ${
+                selectedCategory === key ? 'bg-[#FF5E5E] text-white' : 'bg-[#161618] text-[#8E8E93] border border-[#232326]'
               }`}
-            >
-              {cat === 'all' ? 'Всі' : cat}
-            </button>
+            >{label}</button>
           ))}
         </div>
 
+        {/* Календарі */}
         {activeTab === 'week' && (
           <WeekTab selectedDate={selectedDate} onSelectDate={setSelectedDate} taskSummaries={allTaskSummaries} />
         )}
-
         {activeTab === 'today' && (
-          <HeatmapCalendar
-            selectedDate={selectedDate}
-            onSelectDate={setSelectedDate}
-            taskSummaries={allTaskSummaries}
-          />
+          <HeatmapCalendar selectedDate={selectedDate} onSelectDate={setSelectedDate} taskSummaries={allTaskSummaries} />
         )}
 
+        {/* Settings */}
         {activeTab === 'settings' && (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             {/* Підписка */}
             <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
-              <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-[#FF5E5E]" />
-                Підписка
-              </h3>
+              <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2"><CreditCard className="w-4 h-4 text-[#FF5E5E]" /> Підписка</h3>
               <div className="bg-[#1C1C1E] p-3 rounded-xl border border-[#232326] flex justify-between items-center">
                 <div>
-                  <span className="text-xs font-semibold text-white block">Преміум статус</span>
-                  <span className="text-[10px] text-[#8E8E93]">
-                    {user?.isPremium ? 'Активовано (20 грн/міс)' : 'Базовий тариф'}
-                  </span>
+                  <span className="text-xs font-semibold text-white block">Преміум</span>
+                  <span className="text-[10px] text-[#8E8E93]">{user?.isPremium ? 'Активовано ✅' : 'Базовий тариф'}</span>
                 </div>
                 {!user?.isPremium && (
-                  <button
-                    onClick={handleSubscribe}
-                    className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-bold rounded-xl active:scale-95 shadow-md shadow-[#FF5E5E]/20"
-                  >
-                    Оплатити 20 грн
-                  </button>
+                  <button onClick={handleSubscribe} className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-bold rounded-xl active:scale-95">Оплатити 20 грн</button>
                 )}
               </div>
             </div>
 
-            {/* Профіль продуктивності */}
-            <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
-              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-[#FFAE58]" />
-                Профіль продуктивності
-              </h3>
-              <select
-                value={energyProfile}
-                onChange={(e) => {
-                  setEnergyProfile(e.target.value)
-                  localStorage.setItem('energyProfile', e.target.value)
-                }}
-                className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none"
-              >
-                <option value="morning">🌅 Ранок — складні справи планувати на ранок</option>
-                <option value="evening">🌌 Вечір — складні справи планувати на вечір</option>
-              </select>
-            </div>
-
             {/* STT модель */}
             <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
-              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                <Mic className="w-4 h-4 text-[#A78BFA]" />
-                Модель розпізнавання голосу
-              </h3>
-              <select
-                value={sttModel}
-                onChange={(e) => handleSttModelChange(e.target.value)}
-                className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none"
-              >
+              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><Mic className="w-4 h-4 text-[#A78BFA]" /> Розпізнавання голосу</h3>
+              <select value={sttModel} onChange={(e) => handleSttModelChange(e.target.value)} className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none">
                 <option value="whisper-1">🎙️ OpenAI Whisper-1 (Найточніший)</option>
-                <option value="gpt-4o-mini">🤖 GPT-4o Mini Audio (Економний)</option>
+                <option value="gpt-4o-transcribe">🚀 GPT-4o Transcribe (500h/міс)</option>
+                <option value="gpt-4o-mini-transcribe">⚡ GPT-4o Mini Transcribe (Швидкий)</option>
+              </select>
+              <p className="text-[10px] text-[#636366] mt-2">gpt-4o-transcribe — найкраща якість для української + великий ліміт</p>
+            </div>
+
+            {/* Профіль енергії */}
+            <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
+              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><Clock className="w-4 h-4 text-[#FFAE58]" /> Профіль продуктивності</h3>
+              <select value={energyProfile} onChange={(e) => { setEnergyProfile(e.target.value); localStorage.setItem('energyProfile', e.target.value) }} className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none">
+                <option value="morning">🌅 Ранок — складні справи вранці</option>
+                <option value="evening">🌌 Вечір — складні справи ввечері</option>
               </select>
             </div>
 
             {/* Telegram */}
             <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
-              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#5EA5FF]" />
-                Зв'язати з Telegram-ботом
-              </h3>
-              <p className="text-xs text-[#8E8E93] mb-3">
-                Надсилай голосові нотатки або пиши боту, щоб додавати задачі!
-              </p>
+              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><Sparkles className="w-4 h-4 text-[#5EA5FF]" /> Telegram-бот</h3>
+              <p className="text-xs text-[#8E8E93] mb-3">Надсилай голосові нотатки боту — вони з'являться тут автоматично</p>
               {telegramPairCode ? (
                 <div className="bg-[#1C1C1E] p-3 rounded-xl border border-[#232326] text-center">
-                  <span className="text-[10px] text-[#8E8E93] block uppercase tracking-wider font-semibold mb-1">
-                    Код підключення:
-                  </span>
-                  <span className="text-lg font-mono font-extrabold text-[#FFAE58] tracking-widest block mb-2">
-                    {telegramPairCode}
-                  </span>
-                  <p className="text-[10px] text-[#8E8E93]">
-                    Надішли боту в Telegram: <code className="text-[#A78BFA] font-bold">/pair {telegramPairCode}</code>
-                  </p>
+                  <span className="text-[10px] text-[#8E8E93] block uppercase tracking-wider mb-1">Код підключення:</span>
+                  <span className="text-2xl font-mono font-extrabold text-[#FFAE58] tracking-widest block mb-1">{telegramPairCode}</span>
+                  <p className="text-[10px] text-[#8E8E93]">Надішли боту: <code className="text-[#A78BFA]">/pair {telegramPairCode}</code></p>
                 </div>
               ) : (
-                <button
-                  onClick={handleGeneratePairCode}
-                  className="w-full py-2 bg-[#1C1C1E] hover:bg-[#232326] border border-[#232326] text-white text-xs font-semibold rounded-xl transition-all active:scale-95"
-                >
-                  Генерувати код для Telegram
+                <button onClick={handleGeneratePairCode} className="w-full py-2 bg-[#1C1C1E] hover:bg-[#232326] border border-[#232326] text-white text-xs font-semibold rounded-xl transition-all active:scale-95">
+                  Генерувати код
                 </button>
               )}
             </div>
 
             {/* Notion */}
             <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
-              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                <Share2 className="w-4 h-4 text-[#A78BFA]" />
-                Авто-створення бази у Notion
-              </h3>
-              <p className="text-xs text-[#8E8E93] mb-3">
-                Поділися Notion-сторінкою з <strong className="text-white">Brain Dump AI Planner</strong> та встав її ID:
-              </p>
+              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><Share2 className="w-4 h-4 text-[#A78BFA]" /> База у Notion</h3>
+              <p className="text-xs text-[#8E8E93] mb-3">Поділися Notion-сторінкою з <strong className="text-white">Brain Dump AI Planner</strong> та встав її ID:</p>
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={parentPageId}
-                  onChange={(e) => setParentPageId(e.target.value)}
-                  placeholder="32-значний Page ID..."
-                  className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-[#A78BFA]"
-                />
-                <button
-                  onClick={handleCreateNotionDB}
-                  disabled={isCreatingNotionDB}
-                  className="px-3 py-2 bg-[#A78BFA] text-white text-xs font-bold rounded-xl active:scale-95 disabled:opacity-50"
-                >
-                  {isCreatingNotionDB ? 'Створення...' : 'Створити'}
+                <input type="text" value={parentPageId} onChange={(e) => setParentPageId(e.target.value)} placeholder="32-значний Page ID..." className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-[#A78BFA]" />
+                <button onClick={handleCreateNotionDB} disabled={isCreatingNotionDB} className="px-3 py-2 bg-[#A78BFA] text-white text-xs font-bold rounded-xl active:scale-95 disabled:opacity-50">
+                  {isCreatingNotionDB ? '...' : 'Створити'}
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Панель чернеток задач */}
+        {/* Inbox tab */}
+        {activeTab === 'inbox' && (
+          <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4 mb-2">
+            <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">📥 Inbox — що це?</h3>
+            <p className="text-xs text-[#8E8E93] leading-relaxed">
+              Inbox — це «скринька вхідних думок». Сюди автоматично потрапляють задачі без конкретної дати або категорії.
+              Це твій Quick Capture: надиктував → впало в Inbox → потім розподіляй по датах та категоріях.
+            </p>
+          </div>
+        )}
+
+        {/* Чернетки */}
         {draftTasks && draftTasks.length > 0 && (
-          <div className="bg-[#1C1C1E] border border-[#FFAE58] rounded-2xl p-4 mb-4 shadow-xl">
+          <div className="bg-[#1C1C1E] border border-[#FFAE58]/60 rounded-2xl p-4 shadow-xl">
             <div className="flex items-center justify-between mb-3 border-b border-[#232326] pb-2">
-              <span className="text-xs font-extrabold text-[#FFAE58] flex items-center gap-1.5 uppercase tracking-wider">
-                🤖 AI пропонує ({draftTasks.length}):
+              <span className="text-xs font-extrabold text-[#FFAE58] uppercase tracking-wider">
+                🤖 AI пропонує {draftTasks.length} справ{draftTasks.length > 1 ? 'и' : 'у'}:
               </span>
-              <button onClick={() => setDraftTasks(null)} className="text-[10px] text-[#8E8E93] hover:text-white">
-                Скасувати
-              </button>
+              <button onClick={() => setDraftTasks(null)} className="text-[10px] text-[#636366] hover:text-white"><X className="w-4 h-4" /></button>
             </div>
 
-            <div className="flex flex-col gap-3">
-              {draftTasks.map((t, idx) => (
-                <div key={idx} className="bg-[#161618] border border-[#232326] rounded-xl p-3 flex flex-col gap-2.5">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Назва:</span>
-                    <input
-                      type="text"
-                      value={t.title}
-                      onChange={(e) => {
-                        const updated = [...draftTasks]
-                        updated[idx].title = e.target.value
-                        setDraftTasks(updated)
-                      }}
-                      className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#FFAE58]"
+            <div className="flex flex-col gap-2.5">
+              {draftTasks.map((t, idx) => {
+                const pc = PRIORITY_CONFIG[t.priority] || PRIORITY_CONFIG[4]
+                return (
+                  <div key={idx} className={`bg-[#161618] border border-[#232326] border-l-4 ${pc.border} rounded-xl p-3`}>
+                    {/* Назва */}
+                    <input type="text" value={t.title}
+                      onChange={(e) => { const u = [...draftTasks]; u[idx].title = e.target.value; setDraftTasks(u) }}
+                      className="w-full bg-transparent text-white text-sm font-medium focus:outline-none mb-2"
                     />
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Пріоритет:</span>
-                      <select
-                        value={t.priority}
-                        onChange={(e) => {
-                          const updated = [...draftTasks]
-                          updated[idx].priority = Number(e.target.value)
-                          setDraftTasks(updated)
-                        }}
-                        className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2.5 py-1.5 focus:outline-none"
-                      >
-                        <option value={1}>🔴 P1 High</option>
-                        <option value={2}>🟠 P2 Med</option>
-                        <option value={3}>🔵 P3 Low</option>
-                        <option value={4}>⚪ P4</option>
-                      </select>
+                    {/* Поля редагування */}
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <input type="text" value={t.timeSlot || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].timeSlot = e.target.value; setDraftTasks(u) }} placeholder="⏰ 14:00 - 15:00" className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none" />
+                      <input type="date" value={t.dueDate || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].dueDate = e.target.value; setDraftTasks(u) }} className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none" />
                     </div>
-
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Категорія:</span>
-                      <select
-                        value={t.category}
-                        onChange={(e) => {
-                          const updated = [...draftTasks]
-                          updated[idx].category = e.target.value
-                          setDraftTasks(updated)
-                        }}
-                        className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2.5 py-1.5 focus:outline-none"
-                      >
+                    <div className="flex items-center gap-2">
+                      <select value={t.priority} onChange={(e) => { const u = [...draftTasks]; u[idx].priority = Number(e.target.value); setDraftTasks(u) }} className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none">
+                        <option value={1}>🔴 P1 — Терміново</option>
+                        <option value={2}>🟠 P2 — Важливо</option>
+                        <option value={3}>🔵 P3 — Normal</option>
+                        <option value={4}>⚪ P4 — Низький</option>
+                      </select>
+                      <select value={t.category} onChange={(e) => { const u = [...draftTasks]; u[idx].category = e.target.value; setDraftTasks(u) }} className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none">
                         <option value="inbox">📥 Inbox</option>
                         <option value="work">💻 Work</option>
                         <option value="personal">👤 Personal</option>
                         <option value="fitness">🏋️ Fitness</option>
                         <option value="study">📚 Study</option>
                       </select>
+                      <input type="number" value={t.duration || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].duration = Number(e.target.value) || 0; setDraftTasks(u) }} placeholder="хв" min={1} className="w-14 bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none text-center" />
                     </div>
-
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Тривалість (хв):</span>
-                      <input
-                        type="number"
-                        value={t.duration === 0 ? '' : t.duration}
-                        min={1}
-                        onChange={(e) => {
-                          const updated = [...draftTasks]
-                          updated[idx].duration = e.target.value === '' ? 0 : Number(e.target.value)
-                          setDraftTasks(updated)
-                        }}
-                        className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 border-t border-[#232326] pt-2">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Час:</span>
-                      <input
-                        type="text"
-                        value={t.timeSlot || ''}
-                        onChange={(e) => {
-                          const updated = [...draftTasks]
-                          updated[idx].timeSlot = e.target.value
-                          setDraftTasks(updated)
-                        }}
-                        placeholder="14:00 - 15:00"
-                        className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[9px] text-[#8E8E93] block uppercase tracking-wider font-semibold">Дата:</span>
-                      <input
-                        type="date"
-                        value={t.dueDate || ''}
-                        onChange={(e) => {
-                          const updated = [...draftTasks]
-                          updated[idx].dueDate = e.target.value
-                          setDraftTasks(updated)
-                        }}
-                        className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Підзадачі у чернетці */}
-                  {t.subtasks && t.subtasks.length > 0 && (
-                    <div className="border-t border-[#232326] pt-2">
-                      <span className="text-[9px] text-[#8E8E93] uppercase tracking-wider font-semibold">Підзадачі:</span>
-                      <div className="flex flex-col gap-1 mt-1">
-                        {t.subtasks.map((sub: string, subIdx: number) => (
-                          <div key={subIdx} className="flex items-center gap-2 text-xs text-[#8E8E93]">
-                            <Circle className="w-3 h-3 text-[#FF5E5E] shrink-0" />
-                            <span>{sub}</span>
-                          </div>
+                    {t.subtasks?.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-[#232326] flex flex-col gap-1">
+                        {t.subtasks.map((s: string, si: number) => (
+                          <div key={si} className="text-[11px] text-[#8E8E93] flex items-center gap-1.5"><Circle className="w-3 h-3 text-[#A78BFA]" />{s}</div>
                         ))}
                       </div>
-                    </div>
-                  )}
-
-                  {/* Кнопка видалення чернетки */}
-                  <button
-                    onClick={() => setDraftTasks(draftTasks.filter((_, i) => i !== idx))}
-                    className="self-end text-[10px] text-[#8E8E93] hover:text-[#FF5E5E] flex items-center gap-1"
-                  >
-                    <X className="w-3 h-3" /> Прибрати цю
-                  </button>
-                </div>
-              ))}
+                    )}
+                    <button onClick={() => setDraftTasks(draftTasks.filter((_, i) => i !== idx))} className="mt-2 text-[10px] text-[#636366] hover:text-[#FF5E5E] flex items-center gap-1"><X className="w-3 h-3" /> Прибрати</button>
+                  </div>
+                )
+              })}
             </div>
 
-            <div className="mt-4 flex gap-2">
-              <button
-                onClick={handleConfirmDrafts}
-                disabled={isProcessing}
-                className="flex-1 py-2.5 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white text-xs font-bold rounded-xl active:scale-95 shadow-md shadow-[#FF5E5E]/20 disabled:opacity-50"
-              >
-                ✅ Підтвердити та додати справи
+            <div className="mt-3 flex gap-2">
+              <button onClick={handleConfirmDrafts} disabled={isProcessing} className="flex-1 py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white text-sm font-bold rounded-xl active:scale-95 disabled:opacity-50">
+                ✅ Підтвердити всі
               </button>
-              <button
-                onClick={() => setDraftTasks(null)}
-                className="px-4 py-2.5 bg-[#232326] text-[#8E8E93] text-xs font-bold rounded-xl active:scale-95"
-              >
+              <button onClick={() => setDraftTasks(null)} className="px-4 py-3 bg-[#232326] text-[#8E8E93] text-xs font-bold rounded-xl active:scale-95">
                 Скасувати
               </button>
             </div>
           </div>
         )}
 
-        {/* Сортування */}
-        <div className="flex items-center justify-between mb-2 px-1">
-          <span className="text-[11px] text-[#8E8E93] font-semibold uppercase tracking-wider">
-            Справи ({filteredTasks.filter((t) => t.status === 'todo').length} / {filteredTasks.length})
-          </span>
-          <div className="flex items-center gap-1 bg-[#161618] border border-[#232326] p-1 rounded-xl">
-            <button
-              onClick={() => setSortBy('time')}
-              className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${
-                sortBy === 'time' ? 'bg-[#FF5E5E] text-white shadow-sm' : 'text-[#8E8E93] hover:text-white'
-              }`}
-            >
-              🕒 Час
-            </button>
-            <button
-              onClick={() => setSortBy('priority')}
-              className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${
-                sortBy === 'priority' ? 'bg-[#FF5E5E] text-white shadow-sm' : 'text-[#8E8E93] hover:text-white'
-              }`}
-            >
-              🎯 Пріоритет
-            </button>
-          </div>
-        </div>
-
         {/* Список задач */}
-        <div className="flex-1 flex flex-col gap-2">
-          {filteredTasks.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center my-8">
-              <div className="w-16 h-16 rounded-full bg-[#1C1C1E] border border-[#232326] flex items-center justify-center mb-4 text-[#FF5E5E]">
-                <Zap className="w-8 h-8 opacity-80" />
+        {(activeTab === 'today' || activeTab === 'week' || activeTab === 'inbox') && (
+          <>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-[#636366] font-semibold uppercase tracking-wider">
+                {filteredTasks.filter((t) => t.status === 'todo').length} активних
+              </span>
+              <div className="flex items-center gap-1 bg-[#161618] border border-[#232326] p-0.5 rounded-xl">
+                <button onClick={() => setSortBy('time')} className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${sortBy === 'time' ? 'bg-[#FF5E5E] text-white' : 'text-[#636366]'}`}>🕒 Час</button>
+                <button onClick={() => setSortBy('priority')} className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${sortBy === 'priority' ? 'bg-[#FF5E5E] text-white' : 'text-[#636366]'}`}>🎯 Пріор.</button>
               </div>
-              <h3 className="text-sm font-bold text-white mb-2">Тут народжується твій спокій</h3>
-              <p className="text-xs text-[#8E8E93] max-w-xs leading-relaxed">
-                Надиктуй голосом першу задачу або кинь думку у поле вгорі!
-              </p>
-              <button
-                onClick={startRecording}
-                disabled={isRecording}
-                className={`mt-4 px-5 py-2.5 rounded-xl font-bold text-xs text-white transition-all active:scale-95 ${
-                  isRecording
-                    ? 'bg-[#FF5E5E] animate-pulse'
-                    : 'bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58]'
-                }`}
-              >
-                {isRecording ? '🔴 Зупинити запис' : '🎙️ Надиктувати задачу'}
-              </button>
             </div>
-          ) : (
-            filteredTasks.map((task) => {
-              const isDone = task.status === 'done'
-              const isExpanded = !!expandedTaskIds[task.id]
-              const isEditing = editingTaskId === task.id
 
-              const prioColor =
-                task.priority === 1
-                  ? 'border-l-4 border-l-[#FF5E5E]'
-                  : task.priority === 2
-                  ? 'border-l-4 border-l-[#FFAE58]'
-                  : task.priority === 3
-                  ? 'border-l-4 border-l-[#5EA5FF]'
-                  : 'border-l-4 border-l-[#232326]'
-
-              const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(task.title)}&details=${encodeURIComponent('Brain Dump AI Planner')}`
-
-              return (
-                <div
-                  key={task.id}
-                  className={`bg-[#161618] border rounded-2xl p-3 transition-all ${
-                    task.isCarriedOver
-                      ? 'border-[#FFAE58]/40 shadow-md shadow-[#FFAE58]/10 bg-[#FFAE58]/5 border-l-4 border-l-[#FFAE58]'
-                      : `border-[#232326] ${prioColor}`
-                  } ${isDone ? 'opacity-50' : ''}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => toggleTaskStatus(task)}
-                      className="text-[#8E8E93] hover:text-[#FF5E5E] transition-colors shrink-0"
-                    >
-                      {isDone ? (
-                        <CheckCircle2 className="w-5 h-5 text-[#FF5E5E]" />
-                      ) : (
-                        <Circle className="w-5 h-5" />
-                      )}
-                    </button>
-
-                    <div className="flex-1 min-w-0">
-                      {isEditing ? (
-                        <input
-                          autoFocus
-                          value={editingTitle}
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onBlur={() => handleSaveEditTitle(task)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveEditTitle(task)
-                            if (e.key === 'Escape') setEditingTaskId(null)
-                          }}
-                          className="w-full bg-[#1C1C1E] border border-[#FFAE58] text-white text-xs rounded-lg px-2 py-1 focus:outline-none"
-                        />
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          {task.timeSlot && (
-                            <span className="text-[10px] bg-[#FFAE58]/10 text-[#FFAE58] px-1.5 py-0.5 rounded font-extrabold shrink-0 tracking-wider">
-                              {task.timeSlot}
-                            </span>
-                          )}
-                          {task.isCarriedOver && (
-                            <span className="text-[9px] bg-[#FFAE58]/15 text-[#FFAE58] px-1.5 py-0.5 rounded font-bold shrink-0 border border-[#FFAE58]/30">
-                              перенесено
-                            </span>
-                          )}
-                          <span
-                            className={`text-xs font-medium text-white truncate cursor-pointer ${isDone ? 'line-through text-[#8E8E93]' : 'hover:text-[#FFAE58]'}`}
-                            onDoubleClick={() => {
-                              if (!isDone) {
-                                setEditingTaskId(task.id)
-                                setEditingTitle(task.title)
-                              }
-                            }}
-                          >
-                            {task.title}
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] text-[#8E8E93] flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-[#5EA5FF]" />
-                          {task.duration} хв
-                        </span>
-                        <span className="text-[10px] text-[#8E8E93] flex items-center gap-1 capitalize">
-                          <Tag className="w-3 h-3 text-[#A78BFA]" />
-                          {task.category}
-                        </span>
-                        {task.subtasks && task.subtasks.length > 0 && (
-                          <span className="text-[10px] text-[#5EA5FF]">
-                            📋 {task.subtasks.filter((s) => s.status === 'done').length}/{task.subtasks.length}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <select
-                        value={task.priority}
-                        onChange={async (e) => {
-                          const newPrio = Number(e.target.value)
-                          setTasks(tasks.map((t) => (t.id === task.id ? { ...t, priority: newPrio } : t)))
-                          await fetch('/api/tasks', {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: task.id, priority: newPrio }),
-                          })
-                        }}
-                        className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-1.5 py-0.5 rounded-lg focus:outline-none cursor-pointer"
-                      >
-                        <option value={1}>🔴 P1</option>
-                        <option value={2}>🟠 P2</option>
-                        <option value={3}>🔵 P3</option>
-                        <option value={4}>⚪ P4</option>
-                      </select>
-
-                      <a
-                        href={gcalUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-1 text-[#8E8E93] hover:text-[#5EA5FF]"
-                        title="Додати в Google Календар"
-                      >
-                        <CalendarIcon className="w-3.5 h-3.5" />
-                      </a>
-
-                      {task.subtasks && task.subtasks.length > 0 && (
-                        <button
-                          onClick={() =>
-                            setExpandedTaskIds({
-                              ...expandedTaskIds,
-                              [task.id]: !isExpanded,
-                            })
-                          }
-                          className="p-1 text-[#8E8E93] hover:text-white"
-                        >
-                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => deleteTask(task.id)}
-                        className="p-1.5 text-[#8E8E93] hover:text-[#FF5E5E] transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+            <div className="flex flex-col gap-2">
+              {filteredTasks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="w-14 h-14 rounded-full bg-[#1C1C1E] border border-[#232326] flex items-center justify-center mb-4">
+                    <Zap className="w-7 h-7 text-[#FF5E5E] opacity-60" />
                   </div>
-
-                  {/* Розгорнуті підзадачі */}
-                  {isExpanded && task.subtasks && task.subtasks.length > 0 && (
-                    <div className="mt-2.5 pt-2.5 border-t border-[#232326] pl-6 flex flex-col gap-1.5">
-                      {task.subtasks.map((sub) => (
-                        <div
-                          key={sub.id}
-                          className="flex items-center gap-2 text-xs text-[#8E8E93] cursor-pointer"
-                          onClick={() => toggleTaskStatus(sub)}
-                        >
-                          {sub.status === 'done' ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-[#FF5E5E] shrink-0" />
-                          ) : (
-                            <Circle className="w-3.5 h-3.5 text-[#FF5E5E] shrink-0" />
-                          )}
-                          <span className={sub.status === 'done' ? 'line-through opacity-60' : ''}>{sub.title}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <h3 className="text-sm font-bold text-white mb-2">Тут народжується твій спокій</h3>
+                  <p className="text-xs text-[#636366] max-w-xs mb-5">Надиктуй голосом першу задачу — AI сам розбере і розкладе по часу!</p>
+                  <button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    className={`px-6 py-3 rounded-2xl font-bold text-sm text-white transition-all active:scale-95 ${isRecording ? 'bg-[#FF5E5E] animate-pulse shadow-lg shadow-[#FF5E5E]/40' : 'bg-gradient-to-r from-[#FF5E5E] to-[#A78BFA] shadow-md'}`}
+                  >
+                    {isRecording ? '🔴 Зупинити запис' : '🎙️ Надиктувати задачу'}
+                  </button>
                 </div>
-              )
-            })
-          )}
-        </div>
+              ) : (
+                filteredTasks.map((task) => {
+                  const isDone = task.status === 'done'
+                  const isExpanded = !!expandedTaskIds[task.id]
+                  const isEditing = editingTaskId === task.id
+                  const pc = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG[4]
+                  const doneCount = task.subtasks?.filter((s) => s.status === 'done').length || 0
+                  const totalSubs = task.subtasks?.length || 0
+
+                  return (
+                    <div key={task.id}
+                      className={`bg-[#161618] border border-[#232326] border-l-4 ${
+                        task.isCarriedOver ? 'border-l-[#FFAE58] bg-[#FFAE58]/5' : pc.border
+                      } rounded-2xl overflow-hidden transition-all ${isDone ? 'opacity-55' : ''}`}
+                    >
+                      {/* Основний рядок */}
+                      <div className="flex items-start gap-3 p-3">
+                        {/* Чекбокс — крайній лівий */}
+                        <button onClick={() => toggleTaskStatus(task)} className="shrink-0 mt-0.5 text-[#636366] hover:text-[#FF5E5E] transition-colors">
+                          {isDone ? <CheckCircle2 className="w-5 h-5 text-[#FF5E5E]" /> : <Circle className="w-5 h-5" />}
+                        </button>
+
+                        {/* Весь текст + мета */}
+                        <div className="flex-1 min-w-0">
+                          {/* Час + перенесено */}
+                          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                            {task.timeSlot && (
+                              <span className="text-[10px] bg-[#FFAE58]/15 text-[#FFAE58] px-1.5 py-0.5 rounded-md font-bold tracking-wide">{task.timeSlot}</span>
+                            )}
+                            {task.isCarriedOver && (
+                              <span className="text-[9px] bg-[#FFAE58]/10 text-[#FFAE58]/80 px-1.5 py-0.5 rounded-md border border-[#FFAE58]/20">перенесено</span>
+                            )}
+                          </div>
+
+                          {/* Назва — редагується по двіймому кліку */}
+                          {isEditing ? (
+                            <input autoFocus value={editingTitle}
+                              onChange={(e) => setEditingTitle(e.target.value)}
+                              onBlur={() => handleSaveEditTitle(task)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEditTitle(task); if (e.key === 'Escape') setEditingTaskId(null) }}
+                              className="w-full bg-[#1C1C1E] border border-[#FFAE58] text-white text-sm rounded-lg px-2 py-1 focus:outline-none"
+                            />
+                          ) : (
+                            <span
+                              className={`text-sm font-medium block leading-snug cursor-pointer ${isDone ? 'line-through text-[#636366]' : 'text-white'}`}
+                              onDoubleClick={() => { if (!isDone) { setEditingTaskId(task.id); setEditingTitle(task.title) } }}
+                            >
+                              {task.title}
+                            </span>
+                          )}
+
+                          {/* Мета-рядок */}
+                          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                            <span className="text-[10px] text-[#636366] flex items-center gap-0.5">
+                              <Clock className="w-3 h-3 text-[#5EA5FF]" /> {task.duration} хв
+                            </span>
+                            <span className="text-[10px] text-[#636366] flex items-center gap-0.5 capitalize">
+                              {CATEGORY_EMOJI[task.category] || '📌'} {task.category}
+                            </span>
+                            {totalSubs > 0 && (
+                              <span className="text-[10px] text-[#5EA5FF]">📋 {doneCount}/{totalSubs}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Рядок дій — знизу окремо (Notion-стиль) */}
+                      <div className="flex items-center gap-1 px-3 pb-2.5 border-t border-[#1C1C1E]">
+                        {/* Пріоритет */}
+                        <select
+                          value={task.priority}
+                          onChange={async (e) => {
+                            const newPrio = Number(e.target.value)
+                            setTasks(tasks.map((t) => (t.id === task.id ? { ...t, priority: newPrio } : t)))
+                            await fetch('/api/tasks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: task.id, priority: newPrio }) })
+                          }}
+                          className="bg-transparent text-[10px] text-[#636366] hover:text-white focus:outline-none cursor-pointer pr-1"
+                          style={{ color: pc.color }}
+                        >
+                          <option value={1}>🔴 P1</option>
+                          <option value={2}>🟠 P2</option>
+                          <option value={3}>🔵 P3</option>
+                          <option value={4}>⚪ P4</option>
+                        </select>
+
+                        <div className="flex-1" />
+
+                        {/* Google Calendar */}
+                        <a
+                          href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(task.title)}&details=${encodeURIComponent('Brain Dump AI Planner')}&dates=${task.dueDate ? task.dueDate.replace(/-/g, '') : ''}/${task.dueDate ? task.dueDate.replace(/-/g, '') : ''}`}
+                          target="_blank" rel="noreferrer"
+                          className="p-1.5 text-[#636366] hover:text-[#5EA5FF] transition-colors rounded-lg hover:bg-[#1C1C1E]"
+                          title="Додати в Google Календар"
+                        >
+                          <CalendarIcon className="w-3.5 h-3.5" />
+                        </a>
+
+                        {/* Підзадачі toggle */}
+                        {totalSubs > 0 && (
+                          <button
+                            onClick={() => setExpandedTaskIds({ ...expandedTaskIds, [task.id]: !isExpanded })}
+                            className="p-1.5 text-[#636366] hover:text-white transition-colors rounded-lg hover:bg-[#1C1C1E]"
+                          >
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                        )}
+
+                        {/* Видалити */}
+                        <button onClick={() => deleteTask(task.id)} className="p-1.5 text-[#636366] hover:text-[#FF5E5E] transition-colors rounded-lg hover:bg-[#1C1C1E]">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Підзадачі */}
+                      {isExpanded && task.subtasks && task.subtasks.length > 0 && (
+                        <div className="px-3 pb-3 border-t border-[#1C1C1E] flex flex-col gap-1.5 pt-2.5">
+                          {task.subtasks.map((sub) => (
+                            <div key={sub.id} className="flex items-center gap-2 cursor-pointer" onClick={() => toggleSubtaskStatus(task.id, sub)}>
+                              <div className="shrink-0">
+                                {sub.status === 'done'
+                                  ? <CheckCircle2 className="w-4 h-4 text-[#A78BFA]" />
+                                  : <Circle className="w-4 h-4 text-[#636366]" />
+                                }
+                              </div>
+                              <span className={`text-xs ${sub.status === 'done' ? 'line-through text-[#636366]' : 'text-[#8E8E93]'}`}>{sub.title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            {/* Кнопка "+" — швидке додавання */}
+            {!showQuickAdd ? (
+              <button onClick={() => setShowQuickAdd(true)} className="w-full py-3 border-2 border-dashed border-[#232326] hover:border-[#FF5E5E]/50 text-[#636366] hover:text-[#FF5E5E] rounded-2xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-98 mt-1">
+                <Plus className="w-4 h-4" /> Швидко додати задачу
+              </button>
+            ) : (
+              <div className="bg-[#161618] border border-[#FF5E5E]/40 rounded-2xl p-3 flex flex-col gap-2 mt-1">
+                <input autoFocus type="text" value={quickAddTitle}
+                  onChange={(e) => setQuickAddTitle(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleQuickAdd(); if (e.key === 'Escape') { setShowQuickAdd(false); setQuickAddTitle('') } }}
+                  placeholder="Назва задачі..."
+                  className="w-full bg-transparent text-white text-sm focus:outline-none"
+                />
+                <div className="flex items-center gap-2">
+                  <input type="time" value={quickAddTime} onChange={(e) => setQuickAddTime(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
+                  <select value={quickAddPriority} onChange={(e) => setQuickAddPriority(Number(e.target.value))} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none">
+                    <option value={1}>🔴 P1</option>
+                    <option value={2}>🟠 P2</option>
+                    <option value={3}>🔵 P3</option>
+                    <option value={4}>⚪ P4</option>
+                  </select>
+                  <div className="flex-1" />
+                  <button onClick={handleQuickAdd} disabled={!quickAddTitle.trim() || isQuickAdding} className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-bold rounded-xl active:scale-95 disabled:opacity-40">
+                    {isQuickAdding ? '...' : 'Додати'}
+                  </button>
+                  <button onClick={() => { setShowQuickAdd(false); setQuickAddTitle('') }} className="p-1.5 text-[#636366] hover:text-white"><X className="w-4 h-4" /></button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </main>
 
       <BottomNav
         activeTab={activeTab}
-        setActiveTab={(tab) => {
-          setActiveTab(tab)
-          if (tab === 'today') {
-            setSelectedDate(formatLocalDate())
-          }
-        }}
+        setActiveTab={(tab) => { setActiveTab(tab); if (tab === 'today') setSelectedDate(formatLocalDate()) }}
         taskCountToday={tasks.filter((t) => t.status === 'todo').length}
         taskCountInbox={tasks.filter((t) => t.category === 'inbox' && t.status === 'todo').length}
       />
 
-      <OnboardingModal isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
-      <AuthModal
-        isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-        onSuccess={(u) => setUser(u)}
-      />
+      <OnboardingTour isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} onSuccess={(u) => setUser(u)} />
 
-      {/* Модалка Форс-Мажору */}
+      {/* Форс-мажор модалка */}
       {showRescheduleModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
-          <div className="bg-[#161618] border border-[#FF5E5E]/40 w-full max-w-sm rounded-3xl p-5 relative flex flex-col shadow-2xl">
-            <h2 className="text-base font-bold text-white mb-3 flex items-center gap-2">
-              <span className="text-lg animate-bounce">🚨</span>
-              <span>Форс-мажор</span>
+          <div className="bg-[#161618] border border-[#FF5E5E]/30 w-full max-w-sm rounded-3xl p-5 shadow-2xl">
+            <h2 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+              <span className="animate-bounce">🚨</span> Форс-мажор
             </h2>
-
-            <div className="flex flex-col gap-3.5">
-              <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <label className="text-[11px] text-[#8E8E93] font-medium">Що сталося?</label>
-                  <button
-                    onClick={isRecordingModal ? stopRecordingModal : startRecordingModal}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
-                      isRecordingModal
-                        ? 'bg-[#FF5E5E] text-white animate-pulse'
-                        : 'bg-[#1C1C1E] text-[#FFAE58] border border-[#FFAE58]/30'
-                    }`}
-                  >
-                    <Mic className="w-3.5 h-3.5" />
-                    <span>{isRecordingModal ? 'Запис...' : '🎙️ Надиктувати'}</span>
-                  </button>
-                </div>
-                <textarea
-                  value={rescheduleSituation}
-                  onChange={(e) => setRescheduleSituation(e.target.value)}
-                  placeholder="Опиши що сталося (напр: 'прибери тренування', 'зроби з зала перерву', 'зсунь план на 2 години')..."
-                  className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FF5E5E] h-24 resize-none"
-                />
-              </div>
-
-              <button
-                onClick={handleReschedule}
-                disabled={isRescheduling}
-                className="w-full mt-1 py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white rounded-xl font-bold text-xs transition-all active:scale-95 disabled:opacity-40"
-              >
-                {isRescheduling ? '⏳ AI оптимізує розклад...' : '⚡ Перебудувати розклад'}
-              </button>
-
-              <button
-                onClick={() => {
-                  setShowRescheduleModal(false)
-                  setRescheduleSituation('')
-                }}
-                className="w-full py-2.5 bg-[#232326] text-[#8E8E93] rounded-xl font-semibold text-xs active:scale-95"
-              >
-                Скасувати
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-xs text-[#8E8E93]">Що сталося?</label>
+              <button onClick={isRecordingModal ? stopRecordingModal : startRecordingModal} className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 ${isRecordingModal ? 'bg-[#FF5E5E] text-white animate-pulse' : 'bg-[#1C1C1E] text-[#FFAE58] border border-[#FFAE58]/30'}`}>
+                <Mic className="w-3.5 h-3.5" /> {isRecordingModal ? 'Запис...' : 'Надиктувати'}
               </button>
             </div>
+            <textarea value={rescheduleSituation} onChange={(e) => setRescheduleSituation(e.target.value)}
+              placeholder="Опиши ситуацію (напр: 'прибери тренування', 'зсунь план на 2 год')..."
+              className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FF5E5E] h-24 resize-none mb-3"
+            />
+            <button onClick={handleReschedule} disabled={isRescheduling} className="w-full py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white rounded-xl font-bold text-sm active:scale-95 disabled:opacity-40 mb-2">
+              {isRescheduling ? '⏳ AI перебудовує...' : '⚡ Перебудувати розклад'}
+            </button>
+            <button onClick={() => { setShowRescheduleModal(false); setRescheduleSituation('') }} className="w-full py-2.5 bg-[#232326] text-[#8E8E93] rounded-xl text-xs active:scale-95">Скасувати</button>
           </div>
         </div>
       )}
