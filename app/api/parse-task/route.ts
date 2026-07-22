@@ -3,19 +3,29 @@ import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { syncTaskToNotion } from '@/lib/notion'
 
-export async function POST(req: Request) {
-  try {
-    let user = await getCurrentUser()
+async function resolveUser() {
+  let user = await getCurrentUser()
+  if (!user) {
+    user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { notionToken: { not: null } },
+          { email: { not: 'demo@brain-dump.app' } }
+        ]
+      }
+    })
     if (!user) {
       user = await prisma.user.findFirst()
-      if (!user) {
-        user = await prisma.user.create({
-          data: {
-            email: 'demo@brain-dump.app',
-            passwordHash: 'demo_guest_hash',
-          },
-        })
-      }
+    }
+  }
+  return user
+}
+
+export async function POST(req: Request) {
+  try {
+    const user = await resolveUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Необхідно зареєструватись' }, { status: 400 })
     }
 
     const { text } = await req.json()
@@ -28,8 +38,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'GEMINI_API_KEY не налаштовано на Vercel' }, { status: 500 })
     }
 
-    const todayStr = new Date().toISOString().split('T')[0]
-    const prompt = `Сьогоднішня дата: ${todayStr}. Проаналізуй цей текст та перетвори його у структуроване завдання: "${text}"`
+    const now = new Date()
+    const todayStr = now.toISOString().split('T')[0]
+    const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+
+    const prompt = `Сьогоднішня дата: ${todayStr}. Поточний час: ${currentTimeStr}. 
+Проаналізуй цей текст, розбий його на окремі плани, якщо їх там декілька, та обчисли правильний час і тривалість: "${text}"`
 
     // Виклик Gemini REST API із суворим JSON розбором та temperature=0
     const geminiRes = await fetch(
@@ -42,7 +56,15 @@ export async function POST(req: Request) {
           systemInstruction: {
             parts: [
               {
-                text: 'Ти — AI-планувальник Todoist. Аналізуй сирі думки користувача українською мовою та витягуй з них суть задачі, пріоритет (1 - High, 2 - Medium, 3 - Low, 4 - None), очікувану тривалість у хвилинах, категорію та підзадачі (якщо згадано слово "підзадачі" або є перелік).',
+                text: `Ти — AI-планувальник Todoist. Аналізуй сирі думки користувача українською мовою та розбивай їх на масив структурованих завдань. 
+Враховуй такі правила розбору:
+1. Якщо в тексті згадано кілька різних справ/планів, ОБОВ'ЯЗКОВО виділи їх в окремі об'єкти в масиві.
+2. Розраховуй тривалість (duration) інтелектуально:
+   - Якщо вказано конкретний інтервал (наприклад, "о 18:00... до 20:00" або "з 14 до 15:30"), розрахуй різницю в хвилинах (наприклад, з 18:00 до 20:00 = 120 хвилин).
+   - Якщо вказано поточний час (наприклад, "зараз 18:42, треба доробити до 20:00"), розрахуй тривалість від поточного часу до дедлайну (20:00 - 18:42 = 78 хвилин).
+   - Якщо тривалість не вказано явно, оціни логічно за типом справи (пробіжка = 45 хв, прибирання = 60 хв, перегляд лекції = 90 хв, зателефонувати мамі = 15 хв). Не став завжди 30 хв!
+3. Витягуй пріоритет (1 - High, 2 - Medium, 3 - Low, 4 - None) та категорію (inbox, work, personal, fitness, study).
+4. Витягуй підзадачі, якщо вони є.`,
               },
             ],
           },
@@ -52,18 +74,27 @@ export async function POST(req: Request) {
             responseSchema: {
               type: 'OBJECT',
               properties: {
-                title: { type: 'STRING', description: 'Коротка чітка назва завдання українською мовою' },
-                category: { type: 'STRING', description: 'Категорія: inbox, work, personal, fitness, study' },
-                priority: { type: 'INTEGER', description: 'Пріоритет: 1 (найвищий High), 2 (Medium), 3 (Low), 4 (None)' },
-                duration: { type: 'INTEGER', description: 'Очікувана тривалість у хвилинах' },
-                dueDate: { type: 'STRING', description: 'Дата у форматі YYYY-MM-DD' },
-                subtasks: {
+                tasks: {
                   type: 'ARRAY',
-                  items: { type: 'STRING' },
-                  description: 'Масив назв вкладених підзадач',
+                  items: {
+                    type: 'OBJECT',
+                    properties: {
+                      title: { type: 'STRING', description: 'Назва завдання українською мовою' },
+                      category: { type: 'STRING', description: 'Категорія: inbox, work, personal, fitness, study' },
+                      priority: { type: 'INTEGER', description: 'Пріоритет: 1-4' },
+                      duration: { type: 'INTEGER', description: 'Очікувана тривалість у хвилинах' },
+                      dueDate: { type: 'STRING', description: 'Дата у форматі YYYY-MM-DD' },
+                      subtasks: {
+                        type: 'ARRAY',
+                        items: { type: 'STRING' },
+                        description: 'Масив назв вкладених підзадач',
+                      },
+                    },
+                    required: ['title', 'priority', 'duration'],
+                  },
                 },
               },
-              required: ['title', 'priority', 'duration'],
+              required: ['tasks'],
             },
           },
         }),
@@ -82,45 +113,49 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Порожня відповідь від AI' }, { status: 500 })
     }
 
-    const parsedTask = JSON.parse(parsedText)
+    const { tasks } = JSON.parse(parsedText)
+    const createdTasks = []
 
-    let targetDate = new Date()
-    if (parsedTask.dueDate) {
-      const parsedDate = new Date(parsedTask.dueDate)
-      if (!isNaN(parsedDate.getTime())) {
-        targetDate = parsedDate
+    for (const parsedTask of tasks) {
+      let targetDate = new Date()
+      if (parsedTask.dueDate) {
+        const parsedDate = new Date(parsedTask.dueDate)
+        if (!isNaN(parsedDate.getTime())) {
+          targetDate = parsedDate
+        }
       }
+
+      // Створення завдання в Supabase
+      const newTask = await prisma.task.create({
+        data: {
+          userId: user.id,
+          title: parsedTask.title,
+          priority: parsedTask.priority || 4,
+          category: parsedTask.category || 'inbox',
+          duration: parsedTask.duration || 30,
+          dueDate: targetDate,
+          subtasks: parsedTask.subtasks && parsedTask.subtasks.length > 0 ? {
+            create: parsedTask.subtasks.map((st: string) => ({
+              userId: user.id,
+              title: st,
+              priority: 4,
+              category: parsedTask.category || 'inbox',
+              duration: 15,
+              dueDate: targetDate,
+            }))
+          } : undefined,
+        },
+        include: {
+          subtasks: true,
+        },
+      })
+
+      // Автоматична фонова синхронізація в Notion
+      syncTaskToNotion(newTask.id, user.id).catch((err) => console.error('Auto Notion sync error:', err))
+      createdTasks.push(newTask)
     }
 
-    // Створення головного завдання в Supabase
-    const createdTask = await prisma.task.create({
-      data: {
-        userId: user.id,
-        title: parsedTask.title,
-        priority: parsedTask.priority || 4,
-        category: parsedTask.category || 'inbox',
-        duration: parsedTask.duration || 30,
-        dueDate: targetDate,
-        subtasks: parsedTask.subtasks && parsedTask.subtasks.length > 0 ? {
-          create: parsedTask.subtasks.map((st: string) => ({
-            userId: user.id,
-            title: st,
-            priority: 4,
-            category: parsedTask.category || 'inbox',
-            duration: 15,
-            dueDate: targetDate,
-          }))
-        } : undefined,
-      },
-      include: {
-        subtasks: true,
-      },
-    })
-
-    // Автоматична фонова синхронізація в Notion якщо є налаштування
-    syncTaskToNotion(createdTask.id, user.id).catch((err) => console.error('Auto Notion sync error:', err))
-
-    return NextResponse.json({ task: createdTask, parsedRaw: parsedTask })
+    return NextResponse.json({ success: true, tasks: createdTasks })
   } catch (error) {
     console.error('Parse task API error:', error)
     return NextResponse.json({ error: 'Внутрішня помилка сервера' }, { status: 500 })

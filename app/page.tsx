@@ -66,6 +66,10 @@ export default function Home() {
 
   const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({})
 
+  const [telegramPairCode, setTelegramPairCode] = useState<string>('')
+  const [parentPageId, setParentPageId] = useState<string>('')
+  const [isCreatingNotionDB, setIsCreatingNotionDB] = useState<boolean>(false)
+
   // Отримання сесії користувача при завантаженні
   useEffect(() => {
     fetch('/api/auth/me')
@@ -280,6 +284,59 @@ export default function Home() {
     }
   }
 
+  const handleGeneratePairCode = async () => {
+    try {
+      const res = await fetch('/api/auth/pair-code', { method: 'POST' })
+      const data = await res.json()
+      if (data.pairCode) {
+        setTelegramPairCode(data.pairCode)
+      }
+    } catch (err) {
+      alert('Помилка генерації коду для Telegram')
+    }
+  }
+
+  const handleCreateNotionDB = async () => {
+    if (!parentPageId.trim()) {
+      alert('Введіть ID батьківської сторінки Notion')
+      return
+    }
+    setIsCreatingNotionDB(true)
+    try {
+      const res = await fetch('/api/notion/create-db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentPageId: parentPageId.trim() }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        alert(data.message || 'Базу Notion успішно створено!')
+        setParentPageId('')
+      } else {
+        alert(data.error || 'Помилка створення бази Notion')
+      }
+    } catch (err) {
+      alert('Помилка запиту до Notion')
+    } finally {
+      setIsCreatingNotionDB(false)
+    }
+  }
+
+  const handleActivateDemo = async () => {
+    try {
+      const res = await fetch('/api/auth/demo', { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        setUser(data.user)
+        setShowAuthModal(false)
+        fetchTasks()
+        alert('🎉 Демо-режим активовано! Ми очистили задачі та підготували 3 прості кроки для ознайомлення. Спробуй надиктувати голос або підключити Notion!')
+      }
+    } catch (err) {
+      alert('Помилка активації демо-режиму')
+    }
+  }
+
   // Фільтрація задач за категорією
   const filteredTasks = selectedCategory === 'all'
     ? tasks
@@ -347,24 +404,39 @@ export default function Home() {
           </button>
 
           {user ? (
-            <button
-              onClick={async () => {
-                await fetch('/api/auth/logout', { method: 'POST' })
-                setUser(null)
-                setShowAuthModal(true)
-              }}
-              className="p-2 text-[#8E8E93] hover:text-[#FF5E5E] rounded-xl hover:bg-[#161618] transition-all"
-              title="Вийти"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              {user.email === 'demo@brain-dump.app' && (
+                <span className="text-[10px] bg-[#FFAE58]/15 text-[#FFAE58] px-2 py-1 rounded-lg font-bold">
+                  Demo
+                </span>
+              )}
+              <button
+                onClick={async () => {
+                  await fetch('/api/auth/logout', { method: 'POST' })
+                  setUser(null)
+                  setShowAuthModal(true)
+                }}
+                className="p-2 text-[#8E8E93] hover:text-[#FF5E5E] rounded-xl hover:bg-[#161618] transition-all"
+                title="Вийти"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           ) : (
-            <button
-              onClick={() => setShowAuthModal(true)}
-              className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-semibold rounded-xl active:scale-95"
-            >
-              Увійти
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleActivateDemo}
+                className="px-2.5 py-1.5 bg-[#FFAE58]/20 text-[#FFAE58] hover:bg-[#FFAE58]/30 text-xs font-bold rounded-xl active:scale-95 transition-all"
+              >
+                Спробувати Демо
+              </button>
+              <button
+                onClick={() => setShowAuthModal(true)}
+                className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-semibold rounded-xl active:scale-95"
+              >
+                Увійти
+              </button>
+            </div>
           )}
         </div>
       </header>
@@ -458,30 +530,94 @@ export default function Home() {
         )}
 
         {activeTab === 'settings' && (
-          <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4 mb-4">
-            <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-[#FF5E5E]" />
-              Підписка та Інтеграції
-            </h3>
-            <p className="text-xs text-[#8E8E93] mb-4">
-              Отримай неограничений AI-функціонал, двосторонню синхронізацію з Notion та Google Calendar.
-            </p>
+          <div className="flex flex-col gap-4">
+            {/* Карточка підписки */}
+            <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
+              <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-[#FF5E5E]" />
+                Підписка та Інтеграції
+              </h3>
+              <p className="text-xs text-[#8E8E93] mb-4">
+                Отримай необмежений AI-функціонал, двосторонню синхронізацію з Notion та Google Calendar.
+              </p>
 
-            <div className="bg-[#1C1C1E] p-3 rounded-xl border border-[#232326] mb-4 flex justify-between items-center">
-              <div>
-                <span className="text-xs font-semibold text-white block">Преміум статус</span>
-                <span className="text-[10px] text-[#8E8E93]">
-                  {user?.isPremium ? 'Активовано (20 грн/міс)' : 'Базовий тариф'}
-                </span>
+              <div className="bg-[#1C1C1E] p-3 rounded-xl border border-[#232326] flex justify-between items-center">
+                <div>
+                  <span className="text-xs font-semibold text-white block">Преміум статус</span>
+                  <span className="text-[10px] text-[#8E8E93]">
+                    {user?.isPremium ? 'Активовано (20 грн/міс)' : 'Базовий тариф'}
+                  </span>
+                </div>
+                {!user?.isPremium && (
+                  <button
+                    onClick={handleSubscribe}
+                    className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-bold rounded-xl active:scale-95 shadow-md shadow-[#FF5E5E]/20"
+                  >
+                    Оплатити 20 грн
+                  </button>
+                )}
               </div>
-              {!user?.isPremium && (
+            </div>
+
+            {/* Карточка Telegram-бота */}
+            <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
+              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#5EA5FF]" />
+                Зв'язати з Telegram-ботом
+              </h3>
+              <p className="text-xs text-[#8E8E93] mb-3">
+                Надсилай голосові нотатки або пиши боту, щоб додавати задачі миттєво з Telegram!
+              </p>
+
+              {telegramPairCode ? (
+                <div className="bg-[#1C1C1E] p-3 rounded-xl border border-[#232326] text-center">
+                  <span className="text-[10px] text-[#8E8E93] block uppercase tracking-wider font-semibold mb-1">
+                    Код підключення:
+                  </span>
+                  <span className="text-lg font-mono font-extrabold text-[#FFAE58] tracking-widest block mb-2">
+                    {telegramPairCode}
+                  </span>
+                  <p className="text-[10px] text-[#8E8E93]">
+                    Надішли цей код боту в Telegram командою:<br />
+                    <code className="text-[#A78BFA] font-bold">/pair {telegramPairCode}</code>
+                  </p>
+                </div>
+              ) : (
                 <button
-                  onClick={handleSubscribe}
-                  className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-bold rounded-xl active:scale-95 shadow-md shadow-[#FF5E5E]/20"
+                  onClick={handleGeneratePairCode}
+                  className="w-full py-2 bg-[#1C1C1E] hover:bg-[#232326] border border-[#232326] text-white text-xs font-semibold rounded-xl transition-all active:scale-95"
                 >
-                  Оплатити 20 грн
+                  Генерувати код для Telegram
                 </button>
               )}
+            </div>
+
+            {/* Авто-створення Notion */}
+            <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
+              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                <Share2 className="w-4 h-4 text-[#A78BFA]" />
+                Авто-створення бази у Notion
+              </h3>
+              <p className="text-xs text-[#8E8E93] mb-3">
+                Створи нову порожню сторінку в Notion, поділися нею з інтеграцією <strong className="text-white">Brain Dump AI Planner</strong> та встав її ID (32 символи) нижче:
+              </p>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={parentPageId}
+                  onChange={(e) => setParentPageId(e.target.value)}
+                  placeholder="Встав 32-значний Page ID..."
+                  className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-[#A78BFA]"
+                />
+                <button
+                  onClick={handleCreateNotionDB}
+                  disabled={isCreatingNotionDB}
+                  className="px-3 py-2 bg-[#A78BFA] text-white text-xs font-bold rounded-xl active:scale-95 disabled:opacity-50"
+                >
+                  {isCreatingNotionDB ? 'Створення...' : 'Створити'}
+                </button>
+              </div>
             </div>
           </div>
         )}

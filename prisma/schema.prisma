@@ -19,6 +19,8 @@ model User {
   notionToken         String?   // Encrypted Notion token
   notionDatabaseId    String?
   googleOAuthToken    String?   // Encrypted Google Calendar token
+  telegramChatId      String?   @unique
+  telegramPairCode    String?
   createdAt           DateTime  @default(now())
   tasks               Task[]
   settings            Settings?
