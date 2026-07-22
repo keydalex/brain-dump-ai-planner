@@ -50,6 +50,7 @@ model Task {
   parentId            String?   // for subtasks
   parent              Task?     @relation("SubTasks", fields: [parentId], references: [id], onDelete: Cascade)
   subtasks            Task[]    @relation("SubTasks")
+  createdAt           DateTime  @default(now())
 }
 
 model SyncRegistry {
