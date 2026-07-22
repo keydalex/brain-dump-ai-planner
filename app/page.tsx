@@ -209,7 +209,7 @@ export default function Home() {
 
   const processAudioRecording = async (blob: Blob) => {
     setIsProcessing(true)
-    setProcessStatus('Транскрибуємо аудіо...')
+    setProcessStatus('🎙️ Розпізнаємо голос...')
 
     try {
       const formData = new FormData()
@@ -223,17 +223,82 @@ export default function Home() {
       const transcribeData = await transcribeRes.json()
 
       if (!transcribeData.text) {
-        throw new Error('Не вдалося розпізнати мову')
+        throw new Error('Не вдалося розпізнати мову або аудіо порожнє')
       }
 
-      // Вставляємо розпізнаний текст у текстове поле для перевірки та редагування
-      setInputText((prev) => (prev ? `${prev}\n${transcribeData.text}` : transcribeData.text))
-      setProcessStatus('Голос розпізнано! Можеш відредагувати текст і натиснути відправити.')
+      setProcessStatus(`✨ "${transcribeData.text}". AI розбирає...`)
+
+      const parseRes = await fetch('/api/parse-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: transcribeData.text, model: selectedModel }),
+      })
+      const parseData = await parseRes.json()
+      if (parseData.drafts) {
+        setDraftTasks(parseData.drafts)
+      } else if (parseData.error) {
+        alert(`Помилка AI: ${parseData.error}`)
+      }
+    } catch (err: any) {
+      console.error(err)
+      alert(err.message || 'Помилка мережі чи розпізнавання голосу')
+    } finally {
+      setIsProcessing(false)
+      setProcessStatus('')
+    }
+  }
+
+  const [isRecordingModal, setIsRecordingModal] = useState(false)
+
+  const startRecordingModal = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaRecorderRef.current = new MediaRecorder(stream)
+      audioChunksRef.current = []
+
+      mediaRecorderRef.current.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data)
+        }
+      }
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+        processModalAudioRecording(audioBlob)
+      }
+
+      mediaRecorderRef.current.start()
+      setIsRecordingModal(true)
+    } catch (err) {
+      alert('Не вдалося отримати доступ до мікрофона')
+    }
+  }
+
+  const stopRecordingModal = () => {
+    if (mediaRecorderRef.current && isRecordingModal) {
+      mediaRecorderRef.current.stop()
+      setIsRecordingModal(false)
+    }
+  }
+
+  const processModalAudioRecording = async (blob: Blob) => {
+    try {
+      const formData = new FormData()
+      formData.append('file', blob, 'recording.webm')
+      formData.append('model', sttModel)
+
+      const transcribeRes = await fetch('/api/audio/transcribe', {
+        method: 'POST',
+        body: formData,
+      })
+      const transcribeData = await transcribeRes.json()
+
+      if (transcribeData.text) {
+        setRescheduleSituation((prev) => (prev ? `${prev} ${transcribeData.text}` : transcribeData.text))
+      }
     } catch (err) {
       console.error(err)
       alert('Помилка розпізнавання голосу')
-    } finally {
-      setIsProcessing(false)
     }
   }
 
@@ -974,9 +1039,11 @@ export default function Home() {
               return (
                 <div
                   key={task.id}
-                  className={`bg-[#161618] border border-[#232326] rounded-2xl p-3 transition-all ${prioColor} ${
-                    isDone ? 'opacity-50' : ''
-                  }`}
+                  className={`bg-[#161618] border rounded-2xl p-3 transition-all ${
+                    task.isCarriedOver
+                      ? 'border-[#FFAE58]/40 shadow-md shadow-[#FFAE58]/10 bg-[#FFAE58]/5 border-l-4 border-l-[#FFAE58]'
+                      : `border-[#232326] ${prioColor}`
+                  } ${isDone ? 'opacity-50' : ''}`}
                 >
                   <div className="flex items-center gap-3">
                     <button
@@ -1004,11 +1071,6 @@ export default function Home() {
                         >
                           {task.title}
                         </span>
-                        {task.isCarriedOver && (
-                          <span className="text-[9px] bg-[#FFAE58]/15 text-[#FFAE58] px-1.5 py-0.5 rounded font-semibold shrink-0">
-                            перенесено
-                          </span>
-                        )}
                       </div>
 
                       <div className="flex items-center gap-2 mt-1">
@@ -1127,11 +1189,24 @@ export default function Home() {
 
             <div className="flex flex-col gap-3.5">
               <div>
-                <label className="text-[11px] text-[#8E8E93] block mb-1">Що сталося?</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[11px] text-[#8E8E93]">Що сталося? (текстом або голосом)</label>
+                  <button
+                    onClick={isRecordingModal ? stopRecordingModal : startRecordingModal}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all ${
+                      isRecordingModal
+                        ? 'bg-[#FF5E5E] text-white animate-pulse'
+                        : 'bg-[#1C1C1E] text-[#FFAE58] border border-[#232326]'
+                    }`}
+                  >
+                    <Mic className="w-3 h-3" />
+                    <span>{isRecordingModal ? 'Запис...' : 'Надиктувати'}</span>
+                  </button>
+                </div>
                 <textarea
                   value={rescheduleSituation}
                   onChange={(e) => setRescheduleSituation(e.target.value)}
-                  placeholder="наприклад: 'я захворів', 'залишилось всього 2 години', 'потрібно звільнити час після 18:00'"
+                  placeholder="наприклад: 'прибери тренування', 'стисни розклад на 2 години', 'перенеси уроки на завтра'..."
                   className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#FFAE58] h-20 resize-none"
                 />
               </div>

@@ -17,7 +17,6 @@ export async function POST(req: Request) {
     const todayEnd = new Date()
     todayEnd.setHours(23, 59, 59, 999)
 
-    // Отримуємо всі активні завдання на сьогодні
     const activeTasks = await prisma.task.findMany({
       where: {
         userId: user.id,
@@ -46,15 +45,17 @@ export async function POST(req: Request) {
       hour12: false,
     })
 
-    const prompt = `У мене форс-мажор! Поточний час в Україні: ${currentTimeStr}.
-Опис ситуації: "${situation || 'екстрена зміна планів'}"
-Обрана стратегія: "${strategy || 'compress'}"
+    const prompt = `Поточний час: ${currentTimeStr}.
+Вказівка/ситуація від користувача: "${situation || 'оптимізувати розклад'}"
+Стратегія: "${strategy || 'compress'}"
 Профіль енергії: "${energyProfile || 'morning'}".
 
-УВАГА: НЕ ВИДАЛЯЙ ЗАВДАННЯ І НЕ ХОВАЙ ЇХ! Переплануй всі завдання на сьогодні від поточного часу (${currentTimeStr}) послідовно.
-Спресуй їхню тривалість (compressedDuration) та признач новий проміжок часу (newTimeSlot, наприклад "19:30 - 20:00").
+Проаналізуй вказівку та онови список завдань:
+1. Якщо користувач явно просить вилучити/прибрати конкретну справу (наприклад "прибери тренування"), познач isDeleted: true.
+2. Якщо попросив перенести справу (наприклад "перенеси уроки на завтра" або "на 2 дні"), вкажи moveToDaysAhead (наприклад 1 для завтра, 2 для післязавтра).
+3. Для справ, що залишаються на сьогодні, перерахуй тривалість (compressedDuration) та створи послідовний timeSlot ("HH:MM - HH:MM") починаючи з ${currentTimeStr}.
 
-Завдання на сьогодні: ${JSON.stringify(
+Завдання: ${JSON.stringify(
       activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority }))
     )}.`
 
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
           systemInstruction: {
             parts: [
               {
-                text: `Ти — експерт з перепланування завдань. Твоє головне правило: НІКОЛИ НЕ ВИДАЛЯТИ ЗАВДАННЯ. Перебудуй розклад на сьогодні починаючи від поточного часу. Кожному завданню стисни тривалість (compressedDuration) та признач чіткий проміжок часу newTimeSlot (наприклад, "19:30 - 20:00"). Поверни оновлені завдання в JSON.`,
+                text: `Ти — персональний асистент-планувальник. Чітко виконуй команди користувача (прибери, стисни, перенеси на пізніше/раніше/інший день). Повертай відповідь строго в JSON.`,
               },
             ],
           },
@@ -86,8 +87,10 @@ export async function POST(req: Request) {
                       id: { type: 'STRING' },
                       compressedDuration: { type: 'INTEGER' },
                       newTimeSlot: { type: 'STRING' },
+                      isDeleted: { type: 'BOOLEAN' },
+                      moveToDaysAhead: { type: 'INTEGER' },
                     },
-                    required: ['id', 'compressedDuration', 'newTimeSlot'],
+                    required: ['id', 'compressedDuration'],
                   },
                 },
               },
@@ -99,7 +102,9 @@ export async function POST(req: Request) {
     )
 
     if (!geminiRes.ok) {
-      return NextResponse.json({ error: 'Помилка AI перепланування' }, { status: 502 })
+      const errText = await geminiRes.text()
+      console.error('Reschedule Gemini Error:', errText)
+      return NextResponse.json({ error: 'Помилка зв\'язку з AI або перевищено ліміт запитів. Спробуйте ще раз за хвилину.' }, { status: 502 })
     }
 
     const geminiData = await geminiRes.json()
@@ -113,19 +118,33 @@ export async function POST(req: Request) {
     let updatedCount = 0
 
     for (const item of rescheduledTasks) {
-      await prisma.task.update({
-        where: { id: item.id },
-        data: {
-          duration: item.compressedDuration || 15,
-          timeSlot: item.newTimeSlot || null,
-        },
-      })
+      if (item.isDeleted) {
+        await prisma.task.delete({ where: { id: item.id } })
+      } else if (item.moveToDaysAhead && item.moveToDaysAhead > 0) {
+        const targetDate = new Date()
+        targetDate.setDate(targetDate.getDate() + item.moveToDaysAhead)
+        await prisma.task.update({
+          where: { id: item.id },
+          data: {
+            dueDate: targetDate,
+            isCarriedOver: true,
+          },
+        })
+      } else {
+        await prisma.task.update({
+          where: { id: item.id },
+          data: {
+            duration: item.compressedDuration || 15,
+            timeSlot: item.newTimeSlot || null,
+          },
+        })
+      }
       updatedCount++
     }
 
     return NextResponse.json({
       success: true,
-      message: `Успішно переплановано ${updatedCount} завдань! Жодної справи не видалено.`,
+      message: `Успішно оновлено ${updatedCount} завдань!`,
     })
   } catch (error) {
     console.error('Reschedule API error:', error)

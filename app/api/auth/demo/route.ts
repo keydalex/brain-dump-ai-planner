@@ -4,31 +4,20 @@ import { generateToken } from '@/lib/auth'
 
 export async function POST() {
   try {
-    const email = 'demo@brain-dump.app'
+    // Створюємо унікального ізольованого демо-користувача для кожного пристрою/сесії
+    const uniqueDemoEmail = `demo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}@brain-dump.app`
 
-    // Створюємо або очищуємо демо-користувача
-    let user = await prisma.user.findUnique({
-      where: { email },
+    const user = await prisma.user.create({
+      data: {
+        email: uniqueDemoEmail,
+        passwordHash: 'demo_guest_hash',
+        isPremium: true, // Преміум активний для тестування всіх фіч
+      },
     })
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email,
-          passwordHash: 'demo_guest_hash',
-          isPremium: true, // Вмикаємо преміум для демо щоб показати всі фічі!
-        },
-      })
-    }
-
-    // Видаляємо всі попередні демо-завдання
-    await prisma.task.deleteMany({
-      where: { userId: user.id },
-    })
-
-    // Створюємо 3 красиві інтерактивні onboarding-задачі
+    // Створюємо унікальні інструкційні onboarding-задачі на сьогодні
     const today = new Date()
-    
+
     await prisma.task.createMany({
       data: [
         {
@@ -37,22 +26,25 @@ export async function POST() {
           priority: 1,
           category: 'fitness',
           duration: 90,
+          timeSlot: '18:00 - 19:30',
           dueDate: today,
         },
         {
           userId: user.id,
-          title: '🔌 Натиснути кнопку (🔌) вгорі для синхронізації з Notion',
+          title: '🔌 Натиснути (🔌) вгорі для синхронізації з Notion',
           priority: 2,
           category: 'work',
           duration: 10,
+          timeSlot: '10:00 - 10:10',
           dueDate: today,
         },
         {
           userId: user.id,
-          title: '⚡ Протестувати Форс-Мажор (якщо не встигаєш)',
+          title: '⚡ Протестувати кнопку Форс-Мажор (голосом або текстом)',
           priority: 3,
           category: 'personal',
           duration: 15,
+          timeSlot: '12:00 - 12:15',
           dueDate: today,
         },
       ],
@@ -62,7 +54,7 @@ export async function POST() {
 
     const response = NextResponse.json({
       success: true,
-      message: 'Демо-режим успішно активовано!',
+      message: 'Персональний Демо-акаунт успішно створено!',
       user: {
         id: user.id,
         email: user.email,
@@ -77,7 +69,7 @@ export async function POST() {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 1 * 60 * 60, // 1 година сесії для демо
+      maxAge: 7 * 24 * 60 * 60, // 7 днів приватної сесії для демо
       path: '/',
     })
 
