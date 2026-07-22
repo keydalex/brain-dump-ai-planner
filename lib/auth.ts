@@ -85,7 +85,7 @@ export async function getCurrentUser() {
 
     const user = await prisma.user.findUnique({
       where: { id: verified.userId },
-      select: { id: true, email: true, isPremium: true, createdAt: true },
+      select: { id: true, email: true, isPremium: true, notionToken: true, notionDatabaseId: true, createdAt: true },
     })
     return user
   } catch (err) {
