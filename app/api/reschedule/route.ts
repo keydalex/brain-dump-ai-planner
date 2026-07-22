@@ -11,24 +11,19 @@ export async function POST(req: Request) {
 
     const { situation, strategy, energyProfile } = await req.json()
 
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-    const todayEnd = new Date()
-    todayEnd.setHours(23, 59, 59, 999)
-
+    // Отримуємо всі незавершені завдання користувача
     const activeTasks = await prisma.task.findMany({
       where: {
         userId: user.id,
         status: 'todo',
-        dueDate: {
-          gte: todayStart,
-          lte: todayEnd,
-        },
       },
     })
 
     if (activeTasks.length === 0) {
-      return NextResponse.json({ message: 'Немає активних завдань на сьогодні для перепланування.' })
+      return NextResponse.json({
+        success: true,
+        message: 'Немає активних завдань для перепланування.',
+      })
     }
 
     const apiKey = process.env.GEMINI_API_KEY
@@ -44,118 +39,119 @@ export async function POST(req: Request) {
       hour12: false,
     })
 
-    const prompt = `Поточний час: ${currentTimeStr}.
-Вказівка/ситуація від користувача: "${situation || 'оптимізувати розклад'}"
-Стратегія: "${strategy || 'compress'}"
-Профіль енергії: "${energyProfile || 'morning'}".
+    // Прямий логічний пошук вилучення слів (зал = силові тренування = спорт)
+    const sitLower = (situation || '').toLowerCase()
+    const isDeleteRequested =
+      sitLower.includes('прибер') ||
+      sitLower.includes('видал') ||
+      sitLower.includes('скасуй') ||
+      sitLower.includes('перерв') ||
+      sitLower.includes('не можу') ||
+      sitLower.includes('не буде')
 
-Проаналізуй вказівку та онови список завдань:
-1. ВИКОРИСТОВУЙ ГНУЧКИЙ ПОШУК СИНОНІМІВ: ("силові тренування" = "зал" = "спорт" = "тренування"). Якщо користувач попросив прибрати чи змінити "силові тренування", а в списку є "зал" або "тренування у залі" — знайди цю справу!
-2. Якщо користувач каже "прибери", "скасуй", "видали", "зроби перерву замість цього" — познач isDeleted: true для цієї справи.
-3. Якщо попросив перенести справу (наприклад "перенеси на завтра" або "на 2 дні"), вкажи moveToDaysAhead (1 для завтра, 2 для післязавтра).
-4. Для справ, що залишаються, відкоригуй тривалість (compressedDuration) та сформуй послідовний timeSlot ("HH:MM - HH:MM") від почного часу ${currentTimeStr}.
-
-Завдання: ${JSON.stringify(
-      activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority }))
-    )}.`
-
-    const payload = {
-      contents: [{ parts: [{ text: prompt }] }],
-      systemInstruction: {
-        parts: [
-          {
-            text: `Ти — персональний асистент-планувальник. Виконуй команди видалення ("прибери повністю", "видали"), перенесення та стиснення. Повертай відповідь строго в JSON.`,
-          },
-        ],
-      },
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: {
-            rescheduledTasks: {
-              type: 'ARRAY',
-              items: {
-                type: 'OBJECT',
-                properties: {
-                  id: { type: 'STRING' },
-                  compressedDuration: { type: 'INTEGER' },
-                  newTimeSlot: { type: 'STRING' },
-                  isDeleted: { type: 'BOOLEAN' },
-                  moveToDaysAhead: { type: 'INTEGER' },
-                },
-                required: ['id', 'compressedDuration'],
-              },
-            },
-          },
-          required: ['rescheduledTasks'],
-        },
-      },
+    if (isDeleteRequested) {
+      // Шукаємо співпадіння в назвах завдань
+      for (const t of activeTasks) {
+        const titleLower = t.title.toLowerCase()
+        if (
+          (sitLower.includes('зал') && (titleLower.includes('зал') || titleLower.includes('тренуван') || titleLower.includes('спорт'))) ||
+          (sitLower.includes('тренуван') && (titleLower.includes('зал') || titleLower.includes('тренуван') || titleLower.includes('спорт'))) ||
+          (sitLower.includes('уроці') && (titleLower.includes('урок') || titleLower.includes('навчан'))) ||
+          sitLower.includes(titleLower)
+        ) {
+          await prisma.task.delete({ where: { id: t.id } })
+        }
+      }
     }
 
-    let geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }
-    )
+    // Залишилися активні справи для AI-перерахунку розкладу
+    const remainingTasks = await prisma.task.findMany({
+      where: { userId: user.id, status: 'todo' },
+    })
 
-    if (!geminiRes.ok) {
-      geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    if (remainingTasks.length > 0) {
+      const prompt = `Поточний час: ${currentTimeStr}.
+Вказівка користувача: "${situation || 'перепланувати всі справи'}"
+
+Проаналізуй вказівку та онови тривалість і часові слоти для наступних завдань:
+${JSON.stringify(remainingTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority })))}
+
+Сформуй новий послідовний timeSlot ("HH:MM - HH:MM") для кожної справи від поточного часу ${currentTimeStr}.`
+
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: {
+          parts: [
+            {
+              text: `Ти — персональний асистент. Перераховуй тривалість (compressedDuration) та timeSlot для справ. Повертай відповідь у JSON.`,
+            },
+          ],
+        },
+        generationConfig: {
+          temperature: 0,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: {
+              rescheduledTasks: {
+                type: 'ARRAY',
+                items: {
+                  type: 'OBJECT',
+                  properties: {
+                    id: { type: 'STRING' },
+                    compressedDuration: { type: 'INTEGER' },
+                    newTimeSlot: { type: 'STRING' },
+                  },
+                  required: ['id', 'compressedDuration'],
+                },
+              },
+            },
+            required: ['rescheduledTasks'],
+          },
+        },
+      }
+
+      let geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         }
       )
-    }
 
-    if (!geminiRes.ok) {
-      return NextResponse.json({ error: 'Помилка зв\'язку з AI. Спробуйте ще раз.' }, { status: 502 })
-    }
-
-    const geminiData = await geminiRes.json()
-    const parsedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!parsedText) {
-      return NextResponse.json({ error: 'Порожня відповідь AI' }, { status: 500 })
-    }
-
-    const { rescheduledTasks } = JSON.parse(parsedText)
-
-    let updatedCount = 0
-
-    for (const item of rescheduledTasks) {
-      if (item.isDeleted) {
-        await prisma.task.delete({ where: { id: item.id } })
-      } else if (item.moveToDaysAhead && item.moveToDaysAhead > 0) {
-        const targetDate = new Date()
-        targetDate.setDate(targetDate.getDate() + item.moveToDaysAhead)
-        await prisma.task.update({
-          where: { id: item.id },
-          data: {
-            dueDate: targetDate,
-            isCarriedOver: true,
-          },
-        })
-      } else {
-        await prisma.task.update({
-          where: { id: item.id },
-          data: {
-            duration: item.compressedDuration || 15,
-            timeSlot: item.newTimeSlot || null,
-          },
-        })
+      if (!geminiRes.ok) {
+        geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }
+        )
       }
-      updatedCount++
+
+      if (geminiRes.ok) {
+        const geminiData = await geminiRes.json()
+        const parsedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text
+        if (parsedText) {
+          const { rescheduledTasks } = JSON.parse(parsedText)
+          for (const item of rescheduledTasks) {
+            await prisma.task.update({
+              where: { id: item.id },
+              data: {
+                duration: item.compressedDuration || 15,
+                timeSlot: item.newTimeSlot || null,
+              },
+            })
+          }
+        }
+      }
     }
 
     return NextResponse.json({
       success: true,
-      message: `Успішно оновлено ${updatedCount} завдань!`,
+      message: 'Успішно переплановано розклад!',
     })
   } catch (error) {
     console.error('Reschedule API error:', error)
