@@ -33,6 +33,7 @@ model Settings {
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   reminderHours       String   @default("09:00,18:00") // Comma-separated list of hours
   reminderDays        String   @default("1,2,3,4,5")   // Comma-separated list of days (1-7, Mon-Sun)
+  sttModel            String   @default("whisper-1")
 }
 
 model Task {

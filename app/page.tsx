@@ -79,10 +79,16 @@ export default function Home() {
   const [rescheduleSituation, setRescheduleSituation] = useState('')
   const [rescheduleStrategy, setRescheduleStrategy] = useState('compress')
 
+  const [sttModel, setSttModel] = useState<string>('whisper-1')
+
   useEffect(() => {
     const savedProfile = localStorage.getItem('energyProfile')
     if (savedProfile) {
       setEnergyProfile(savedProfile)
+    }
+    const savedStt = localStorage.getItem('sttModel')
+    if (savedStt) {
+      setSttModel(savedStt)
     }
   }, [])
 
@@ -187,13 +193,26 @@ export default function Home() {
     }
   }
 
+  const handleSttModelChange = async (val: string) => {
+    setSttModel(val)
+    localStorage.setItem('sttModel', val)
+    if (user) {
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sttModel: val }),
+      })
+    }
+  }
+
   const processAudioRecording = async (blob: Blob) => {
     setIsProcessing(true)
-    setProcessStatus('Транскрибуємо через Whisper...')
+    setProcessStatus('Транскрибуємо аудіо...')
 
     try {
       const formData = new FormData()
       formData.append('file', blob, 'recording.webm')
+      formData.append('model', sttModel)
 
       const transcribeRes = await fetch('/api/audio/transcribe', {
         method: 'POST',
@@ -647,6 +666,26 @@ export default function Home() {
               >
                 <option value="morning">🌅 Ранок — складні справи планувати на ранок</option>
                 <option value="evening">🌌 Вечір — складні справи планувати на вечір</option>
+              </select>
+            </div>
+
+            {/* Карточка налаштувань Speech-to-Text */}
+            <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
+              <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                <Mic className="w-4 h-4 text-[#A78BFA]" />
+                Модель розпізнавання голосу (STT)
+              </h3>
+              <p className="text-xs text-[#8E8E93] mb-3">
+                Обери модель розшифровки голосових повідомлень на сайті та в Telegram:
+              </p>
+
+              <select
+                value={sttModel}
+                onChange={(e) => handleSttModelChange(e.target.value)}
+                className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none"
+              >
+                <option value="whisper-1">🎙️ OpenAI Whisper-1 (Максимальна точність)</option>
+                <option value="gpt-4o-mini">🤖 GPT-4o Mini Audio (Швидка та економна)</option>
               </select>
             </div>
 
