@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { formatLocalDate } from '@/lib/date'
 
 export async function POST(req: Request) {
   try {
@@ -37,12 +38,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'GEMINI_API_KEY не налаштовано' }, { status: 500 })
     }
 
-    const prompt = `У мене форс-мажор! 
-Опис ситуації: "${situation || 'екстрена зміна планів'}"
-Обрана стратегія: "${strategy || 'оптимізувати наявний час'}"
-Профіль енергії: "${energyProfile || 'morning'}" (якщо morning, плануй складні справи P1/P2 на ранок, якщо evening — на вечір).
+    const now = new Date()
+    const currentTimeStr = now.toLocaleTimeString('uk-UA', {
+      timeZone: 'Europe/Kyiv',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
 
-Переплануй ці завдання на сьогодні: ${JSON.stringify(
+    const prompt = `У мене форс-мажор! Поточний час в Україні: ${currentTimeStr}.
+Опис ситуації: "${situation || 'екстрена зміна планів'}"
+Обрана стратегія: "${strategy || 'compress'}"
+Профіль енергії: "${energyProfile || 'morning'}".
+
+УВАГА: НЕ ВИДАЛЯЙ ЗАВДАННЯ І НЕ ХОВАЙ ЇХ! Переплануй всі завдання на сьогодні від поточного часу (${currentTimeStr}) послідовно.
+Спресуй їхню тривалість (compressedDuration) та признач новий проміжок часу (newTimeSlot, наприклад "19:30 - 20:00").
+
+Завдання на сьогодні: ${JSON.stringify(
       activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority }))
     )}.`
 
@@ -56,7 +68,7 @@ export async function POST(req: Request) {
           systemInstruction: {
             parts: [
               {
-                text: `Ти — експерт з перепланування завдань у форс-мажорних ситуаціях. Оціни ситуацію, стисни тривалість (compressedDuration) важких задач або перенеси найменш важливі (P3/P4) на завтра (moveToTomorrow: true), відповідно до стратегії користувача та його профілю енергії. Поверни оновлені завдання в JSON.`,
+                text: `Ти — експерт з перепланування завдань. Твоє головне правило: НІКОЛИ НЕ ВИДАЛЯТИ ЗАВДАННЯ. Перебудуй розклад на сьогодні починаючи від поточного часу. Кожному завданню стисни тривалість (compressedDuration) та признач чіткий проміжок часу newTimeSlot (наприклад, "19:30 - 20:00"). Поверни оновлені завдання в JSON.`,
               },
             ],
           },
@@ -73,9 +85,9 @@ export async function POST(req: Request) {
                     properties: {
                       id: { type: 'STRING' },
                       compressedDuration: { type: 'INTEGER' },
-                      moveToTomorrow: { type: 'BOOLEAN' },
+                      newTimeSlot: { type: 'STRING' },
                     },
-                    required: ['id', 'compressedDuration', 'moveToTomorrow'],
+                    required: ['id', 'compressedDuration', 'newTimeSlot'],
                   },
                 },
               },
@@ -101,30 +113,19 @@ export async function POST(req: Request) {
     let updatedCount = 0
 
     for (const item of rescheduledTasks) {
-      if (item.moveToTomorrow) {
-        const tomorrow = new Date()
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        await prisma.task.update({
-          where: { id: item.id },
-          data: {
-            dueDate: tomorrow,
-            isCarriedOver: true,
-          },
-        })
-      } else {
-        await prisma.task.update({
-          where: { id: item.id },
-          data: {
-            duration: item.compressedDuration || 15,
-          },
-        })
-      }
+      await prisma.task.update({
+        where: { id: item.id },
+        data: {
+          duration: item.compressedDuration || 15,
+          timeSlot: item.newTimeSlot || null,
+        },
+      })
       updatedCount++
     }
 
     return NextResponse.json({
       success: true,
-      message: `Успішно переплановано ${updatedCount} завдань!`,
+      message: `Успішно переплановано ${updatedCount} завдань! Жодної справи не видалено.`,
     })
   } catch (error) {
     console.error('Reschedule API error:', error)

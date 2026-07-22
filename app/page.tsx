@@ -74,6 +74,8 @@ export default function Home() {
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3.6-flash')
   const [draftTasks, setDraftTasks] = useState<any[] | null>(null)
 
+  const [sortBy, setSortBy] = useState<'time' | 'priority'>('time')
+
   const [energyProfile, setEnergyProfile] = useState<string>('morning')
   const [showRescheduleModal, setShowRescheduleModal] = useState(false)
   const [rescheduleSituation, setRescheduleSituation] = useState('')
@@ -402,10 +404,19 @@ export default function Home() {
     }
   }
 
-  // Фільтрація задач за категорією
-  const filteredTasks = selectedCategory === 'all'
+  // Фільтрація та сортування задач
+  const filteredTasks = (selectedCategory === 'all'
     ? tasks
     : tasks.filter((t) => t.category.toLowerCase() === selectedCategory.toLowerCase())
+  ).sort((a, b) => {
+    if (sortBy === 'priority') {
+      return a.priority - b.priority
+    }
+    // Сортування за часом timeSlot або за порядком створення
+    const timeA = a.timeSlot ? a.timeSlot.split('-')[0].trim() : '99:99'
+    const timeB = b.timeSlot ? b.timeSlot.split('-')[0].trim() : '99:99'
+    return timeA.localeCompare(timeB)
+  })
 
   const taskSummaries: Record<string, { count: number; hasHighPriority: boolean }> = {}
   tasks.forEach((t) => {
@@ -902,6 +913,32 @@ export default function Home() {
           </div>
         )}
 
+        {/* Панель сортування та списку задач */}
+        <div className="flex items-center justify-between mb-2 px-1">
+          <span className="text-[11px] text-[#8E8E93] font-semibold uppercase tracking-wider">
+            Справи ({filteredTasks.length})
+          </span>
+
+          <div className="flex items-center gap-1 bg-[#161618] border border-[#232326] p-1 rounded-xl">
+            <button
+              onClick={() => setSortBy('time')}
+              className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${
+                sortBy === 'time' ? 'bg-[#FF5E5E] text-white shadow-sm' : 'text-[#8E8E93] hover:text-white'
+              }`}
+            >
+              🕒 За часом
+            </button>
+            <button
+              onClick={() => setSortBy('priority')}
+              className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${
+                sortBy === 'priority' ? 'bg-[#FF5E5E] text-white shadow-sm' : 'text-[#8E8E93] hover:text-white'
+              }`}
+            >
+              🎯 За пріоритетом
+            </button>
+          </div>
+        </div>
+
         {/* Список задач */}
         <div className="flex-1 flex flex-col gap-2">
           {filteredTasks.length === 0 ? (
@@ -987,7 +1024,27 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={task.priority}
+                        onChange={async (e) => {
+                          const newPrio = Number(e.target.value)
+                          setTasks(tasks.map((t) => (t.id === task.id ? { ...t, priority: newPrio } : t)))
+                          await fetch('/api/tasks', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: task.id, priority: newPrio }),
+                          })
+                        }}
+                        className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-1.5 py-0.5 rounded-lg focus:outline-none cursor-pointer"
+                        title="Змінити пріоритет"
+                      >
+                        <option value={1}>🔴 P1</option>
+                        <option value={2}>🟠 P2</option>
+                        <option value={3}>🔵 P3</option>
+                        <option value={4}>⚪ P4</option>
+                      </select>
+
                       <a
                         href={gcalUrl}
                         target="_blank"
