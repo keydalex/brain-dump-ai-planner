@@ -564,21 +564,34 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="mt-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-1.5 text-[10px] text-[#8E8E93]">
-              <span>Модель AI:</span>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-2 py-1 rounded-lg focus:outline-none"
-              >
-                <option value="gemini-3.6-flash">Gemini 3.6 Flash (Швидкість + Логіка)</option>
-                <option value="gemini-3.5-flash">Gemini 3.5 Flash (Баланс)</option>
-                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Ультрашвидка)</option>
-                <option value="gemini-3.1-pro">Gemini 3.1 Pro (Глибока аналітика)</option>
-              </select>
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-[#232326] pt-2">
+            <div className="flex flex-wrap items-center gap-3 text-[10px] text-[#8E8E93]">
+              <div className="flex items-center gap-1">
+                <span>🧠 AI Мозок:</span>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-2 py-1 rounded-lg focus:outline-none"
+                >
+                  <option value="gemini-3.6-flash">Gemini 3.6 Flash (Швидкість + Логіка)</option>
+                  <option value="gemini-3.5-flash">Gemini 3.5 Flash (Баланс)</option>
+                  <option value="gemini-3.1-pro">Gemini 3.1 Pro (Максимальна якість)</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <span>🎙️ Голос (STT):</span>
+                <select
+                  value={sttModel}
+                  onChange={(e) => handleSttModelChange(e.target.value)}
+                  className="bg-[#1C1C1E] border border-[#232326] text-white text-[10px] px-2 py-1 rounded-lg focus:outline-none"
+                >
+                  <option value="whisper-1">OpenAI Whisper-1 ($0.006/хв)</option>
+                  <option value="gpt-4o-mini">GPT-4o Mini Audio</option>
+                </select>
+              </div>
             </div>
-            
+
             {processStatus && (
               <div className="text-[10px] text-[#A78BFA] flex items-center gap-1.5 animate-pulse">
                 <RefreshCw className="w-3 h-3 animate-spin" />
