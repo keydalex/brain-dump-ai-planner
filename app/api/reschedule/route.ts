@@ -58,47 +58,60 @@ export async function POST(req: Request) {
       activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority }))
     )}.`
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+    const payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      systemInstruction: {
+        parts: [
+          {
+            text: `Ти — персональний асистент-планувальник. Виконуй команди видалення ("прибери повністю", "видали"), перенесення та стиснення. Повертай відповідь строго в JSON.`,
+          },
+        ],
+      },
+      generationConfig: {
+        temperature: 0,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            rescheduledTasks: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  id: { type: 'STRING' },
+                  compressedDuration: { type: 'INTEGER' },
+                  newTimeSlot: { type: 'STRING' },
+                  isDeleted: { type: 'BOOLEAN' },
+                  moveToDaysAhead: { type: 'INTEGER' },
+                },
+                required: ['id', 'compressedDuration'],
+              },
+            },
+          },
+          required: ['rescheduledTasks'],
+        },
+      },
+    }
+
+    let geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          systemInstruction: {
-            parts: [
-              {
-                text: `Ти — персональний асистент-планувальник. Виконуй команди видалення ("прибери повністю", "видали"), перенесення та стиснення. Повертай відповідь строго в JSON.`,
-              },
-            ],
-          },
-          generationConfig: {
-            temperature: 0,
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: 'OBJECT',
-              properties: {
-                rescheduledTasks: {
-                  type: 'ARRAY',
-                  items: {
-                    type: 'OBJECT',
-                    properties: {
-                      id: { type: 'STRING' },
-                      compressedDuration: { type: 'INTEGER' },
-                      newTimeSlot: { type: 'STRING' },
-                      isDeleted: { type: 'BOOLEAN' },
-                      moveToDaysAhead: { type: 'INTEGER' },
-                    },
-                    required: ['id', 'compressedDuration'],
-                  },
-                },
-              },
-              required: ['rescheduledTasks'],
-            },
-          },
-        }),
+        body: JSON.stringify(payload),
       }
     )
+
+    if (!geminiRes.ok) {
+      geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      )
+    }
 
     if (!geminiRes.ok) {
       return NextResponse.json({ error: 'Помилка зв\'язку з AI. Спробуйте ще раз.' }, { status: 502 })
