@@ -24,12 +24,11 @@ export async function POST(req: Request) {
 
     let transcribedText = ''
 
-    // ─── GPT-4o Transcribe API (нова endpoints, 500h/місяць) ───
-    if (requestedModel === 'gpt-4o-transcribe' || requestedModel === 'gpt-4o-mini-transcribe') {
+    // ─── 1. GPT-4o Mini Transcribe або GPT Realtime Whisper (через API транскрипцій) ───
+    if (requestedModel === 'gpt-4o-mini-transcribe' || requestedModel === 'gpt-realtime-whisper') {
       try {
         const transcribeFormData = new FormData()
         transcribeFormData.append('file', audioFile, audioFile.name || 'audio.webm')
-        // Новий API використовує ті ж самі ендпоінти що і whisper, але з іншою назвою моделі
         transcribeFormData.append('model', requestedModel)
         transcribeFormData.append('language', 'uk')
 
@@ -46,49 +45,13 @@ export async function POST(req: Request) {
         } else {
           const errText = await res.text()
           console.warn(`[STT] ${requestedModel} failed (${res.status}):`, errText)
-          // Fallback до whisper-1
         }
       } catch (err) {
         console.warn(`[STT] ${requestedModel} exception, falling back to whisper-1:`, err)
       }
     }
 
-    // ─── GPT-4o Mini Audio completions (legacy, через chat) ───
-    if (!transcribedText && requestedModel === 'gpt-4o-mini-audio') {
-      try {
-        const arrayBuffer = await audioFile.arrayBuffer()
-        const base64Data = Buffer.from(arrayBuffer).toString('base64')
-
-        const ext = audioFile.name?.includes('mp4') ? 'mp4' : audioFile.name?.includes('ogg') ? 'ogg' : 'webm'
-        // OpenAI audio chat completions підтримує wav та mp3; для webm/ogg — fallback на whisper
-        // Тому цей шлях лишаємо тільки як останній варіант
-
-        const gptRes = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            modalities: ['text'],
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'input_audio', input_audio: { data: base64Data, format: ext === 'webm' ? 'wav' : ext } },
-                { type: 'text', text: 'Транскрибуй це аудіо слово в слово українською мовою. Поверни лише текст без коментарів.' },
-              ],
-            }],
-          }),
-        })
-
-        if (gptRes.ok) {
-          const gptData = await gptRes.json()
-          transcribedText = gptData.choices?.[0]?.message?.content || ''
-        }
-      } catch (err) {
-        console.warn('[STT] gpt-4o-mini-audio chat failed:', err)
-      }
-    }
-
-    // ─── Whisper-1 — основний надійний fallback ───
+    // ─── 2. Whisper-1 — основна точна модель (fallback) ───
     if (!transcribedText) {
       const whisperFD = new FormData()
       whisperFD.append('file', audioFile, audioFile.name || 'audio.webm')
@@ -109,7 +72,7 @@ export async function POST(req: Request) {
 
       const whisperData = await whisperRes.json()
       transcribedText = whisperData.text || ''
-      console.log(`[STT] whisper-1 fallback success`)
+      console.log(`[STT] whisper-1 success`)
     }
 
     return NextResponse.json({ text: transcribedText })
