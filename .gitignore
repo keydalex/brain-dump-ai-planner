@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local workspace guides and PDF resources
+v1_implementation_plan.md
+v2_implementation_plan.md
+*Claude.pdf
+plan_ai lab_skelar.txt
+good plan/
+
