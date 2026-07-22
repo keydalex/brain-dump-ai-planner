@@ -1,0 +1,71 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  passwordHash        String
+  isPremium           Boolean   @default(false)
+  stripeCustomerId    String?
+  notionToken         String?   // Encrypted Notion token
+  notionDatabaseId    String?
+  googleOAuthToken    String?   // Encrypted Google Calendar token
+  createdAt           DateTime  @default(now())
+  tasks               Task[]
+  settings            Settings?
+  memories            UserMemory[]
+}
+
+model Settings {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reminderHours       String   @default("09:00,18:00") // Comma-separated list of hours
+  reminderDays        String   @default("1,2,3,4,5")   // Comma-separated list of days (1-7, Mon-Sun)
+}
+
+model Task {
+  id                  String    @id @default(uuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title               String
+  notes               String?
+  status              String    @default("todo") // todo, done
+  priority            Int       @default(4)      // 1 (High) to 4 (None)
+  category            String    @default("inbox") // inbox, work, personal, fitness, study
+  duration            Int       @default(30)     // in minutes
+  dueDate             DateTime?
+  timeSlot            String?   // E.g., "10:00 - 11:30"
+  recurrenceInterval  Int?      // number of days for recurrence
+  isCarriedOver       Boolean   @default(false)
+  parentId            String?   // for subtasks
+  parent              Task?     @relation("SubTasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks            Task[]    @relation("SubTasks")
+}
+
+model SyncRegistry {
+  id                  String    @id @default(uuid())
+  taskId              String    @unique
+  notionId            String?
+  googleCalendarId    String?
+  lastSyncedAt        DateTime  @default(now())
+  lastModifiedBy      String    // "app", "notion", "gcal"
+}
+
+model UserMemory {
+  id                  String    @id @default(uuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content             String    // The structured memory text
+  embedding           Unsupported("vector(1536)")? // pgvector OpenAI size embedding
+  createdAt           DateTime  @default(now())
+}

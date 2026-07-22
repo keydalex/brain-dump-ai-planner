@@ -47,3 +47,12 @@ v2_implementation_plan.md
 plan_ai lab_skelar.txt
 good plan/
 
+
+/app/generated/prisma
+
+# Agent plugins & IDE settings
+.agents/
+.claude/
+.windsurf/
+skills-lock.json
+

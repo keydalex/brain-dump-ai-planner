@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🧠 Brain Dump AI Planner (Skelar Lab Project)
 
-## Getting Started
+Мобільний PWA-додаток (Todoist-style) з нативним штучним інтелектом для структурування хаотичних думок, ідей та голосових нотаток у чіткий розклад Notion та Google Calendar.
 
-First, run the development server:
+Проєкт створено в межах фінального завдання від Skelar Lab.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🌟 Основні можливості
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **📥 Мультимодальний Inbox**: Голосовий та текстовий ввід думок українською мовою.
+- **🎙️ Точна STT-транскрипція**: Інтеграція з OpenAI Whisper API з хмарним завантаженням великих аудіо через Vercel Blob (обхід лімітів Vercel).
+- **📅 Heatmap Календар**: Візуальне відображення завантаженості днів (у стилі контрибуцій GitHub).
+- **🛹 Week-Tab**: Горизонтальний планувальник на 7 днів із перетягуванням завдань (Drag-and-Drop).
+- **🤖 Розумне планування & Carryover**:
+  - Автоматичне перенесення невиконаних завдань на наступний день за київським часом (`TZ="Europe/Kyiv"`).
+  - Force Majeure перепланування та розстановка важких завдань на ранок/вечір.
+  - Підзадачі, які активуються автоматично за допомогою ключових слів.
+- **🔌 Двостороння синхронізація**: Notion API та Google Calendar (із захистом від циклічних петель оновлення).
+- **💳 Преміум-підписка**: Реальна платіжна інтеграція для підписок (Stripe або Monobank T2P) на 20 грн/місяць.
+- **🚀 Onboarding**: Інтерактивний покроковий тур для нових користувачів на базі `NextStep.js`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 🛠️ Технологічний стек
 
-To learn more about Next.js, take a look at the following resources:
+- **Frontend/Backend**: Next.js 14+ (App Router), TypeScript, Tailwind CSS, Framer Motion.
+- **База даних**: Supabase (PostgreSQL) + Prisma ORM + pgvector.
+- **Інтеграція AI**: Gemini 3.5 Flash (Structured Outputs) + OpenAI Whisper.
+- **Telegram-бот**: Webhook-роут всередині Next.js для додавання завдань через Telegram.
+- **Деплой**: Vercel.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📂 Структура проєкту
 
-## Deploy on Vercel
+- `/app` — сторінки та серверні роути (API) Next.js.
+- `/prisma` — схема бази даних та конфігурація.
+- `/public` — статичні ресурси та іконки PWA.
+- `/scripts` — допоміжні утиліти (включаючи локальний Python CLI-парсер).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🐍 Локальний Python CLI-парсер (`scripts/cli_parser.py`)
+
+Для демонстрації навичок роботи з Python у репозиторії створено консольний скрипт, який підключається до Gemini API та структурує сирий текст завдання у JSON за допомогою Pydantic-схем.
+
+### Запуск:
+1. Переконайся, що у тебе встановлений Python 3.10+ та створений файл `.env` у корені проєкту з ключем `GEMINI_API_KEY`.
+2. Встанови залежності:
+   ```bash
+   pip install google-genai pydantic python-dotenv
+   ```
+3. Запусти скрипт із сирим текстом завдання:
+   ```bash
+   python scripts/cli_parser.py "треба завтра о 15:00 сходити в зал на півтори години це терміново"
+   ```
