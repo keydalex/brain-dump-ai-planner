@@ -146,7 +146,17 @@ ${text}
       return NextResponse.json({ error: 'Порожня відповідь від AI' }, { status: 500 })
     }
 
-    const { tasks } = JSON.parse(parsedText)
+    let { tasks } = JSON.parse(parsedText)
+
+    // 🛡️ ЗАЛІЗНА ГАРАНТІЯ: Програмно зачищаємо дати для Inbox перед поверненням
+    if (isInboxMode && Array.isArray(tasks)) {
+      tasks = tasks.map((t: any) => ({
+        ...t,
+        category: 'inbox',
+        dueDate: null,
+        timeSlot: null,
+      }))
+    }
 
     return NextResponse.json({ success: true, drafts: tasks })
   } catch (error) {

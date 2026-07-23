@@ -137,18 +137,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true })
     }
 
+    const todayStr = formatLocalDate()
+    const isExplicitInbox = extractedText.toLowerCase().startsWith('/inbox') || extractedText.toLowerCase().startsWith('inbox')
+
     // Створення завдань через Gemini AI Parser
-    let tasksToCreate = [{ title: extractedText, priority: 4, category: 'inbox', duration: 30, dueDate: formatLocalDate(), timeSlot: null, subtasks: [] }]
+    let tasksToCreate = [{ title: extractedText.replace(/^\/inbox\s*/i, '').replace(/^inbox\s*/i, ''), priority: 4, category: isExplicitInbox ? 'inbox' : 'personal', duration: 30, dueDate: isExplicitInbox ? null : todayStr, timeSlot: null, subtasks: [] }]
 
     if (process.env.GEMINI_API_KEY) {
       const apiKey = process.env.GEMINI_API_KEY
-      const todayStr = formatLocalDate()
       const currentTimeStr = getKyivTimeStr()
       const now = new Date()
       const weekdays = ['неділя', 'понеділок', 'вівторок', 'середа', 'четвер', 'п’ятниця', 'субота']
       const currentDayOfWeek = weekdays[now.getDay()]
-      const isExplicitInbox = extractedText.toLowerCase().startsWith('/inbox') || extractedText.toLowerCase().startsWith('inbox')
-
       const cleanText = extractedText.replace(/^\/inbox\s*/i, '').replace(/^inbox\s*/i, '')
 
       const prompt = `СИСТЕМНІ ЗМІННІ:
@@ -223,17 +223,43 @@ ${cleanText}
       }
     }
 
+    // Реєструємо меню команд у Telegram через setMyCommands (автокомпліт при /)
+    fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        commands: [
+          { command: 'start', description: '🚀 Авторизуватись у планері' },
+          { command: 'inbox', description: '📥 Додати думку в беклог (без дати)' },
+          { command: 'status', description: '📊 Стан підписки' },
+          { command: 'help', description: 'ℹ️ Довідка та інструкція' },
+          { command: 'logout', description: '🔌 Відключити акаунт' },
+        ],
+      }),
+    }).catch(() => {})
+
     const responseLines = []
     for (const t of tasksToCreate) {
-      const [y, m, d] = (t.dueDate || formatLocalDate()).split('-').map(Number)
-      const targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+      let targetDate: Date | null = null
+      
+      if (isExplicitInbox) {
+        // 🛡️ ЗАЛІЗНА ГАРАНТІЯ: Для /inbox дати завжди null!
+        targetDate = null
+        t.category = 'inbox'
+        t.timeSlot = null
+      } else {
+        // Для звичайного режиму PLANNER: якщо дата відсутня — ставимо сьогодні!
+        const dateStr = t.dueDate || todayStr
+        const [y, m, d] = dateStr.split('-').map(Number)
+        targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+      }
 
       const createdTask = await prisma.task.create({
         data: {
           userId: user.id,
           title: t.title,
           priority: t.priority || 4,
-          category: t.category || 'inbox',
+          category: t.category || (isExplicitInbox ? 'inbox' : 'personal'),
           duration: t.duration || 30,
           dueDate: targetDate,
           timeSlot: t.timeSlot || null,
@@ -241,10 +267,18 @@ ${cleanText}
       })
 
       syncTaskToNotion(createdTask.id, user.id).catch((err) => console.error('Telegram Notion sync error:', err))
-      responseLines.push(`📌 **${createdTask.title}** ${createdTask.timeSlot ? `(\`${createdTask.timeSlot}\`)` : ''} (⏱️ ${createdTask.duration} хв)`)
+      
+      if (isExplicitInbox) {
+        responseLines.push(`📥 **${createdTask.title}** (збережено в Inbox без дат)`)
+      } else {
+        responseLines.push(`📅 **${createdTask.title}** ${createdTask.timeSlot ? `(\`${createdTask.timeSlot}\`)` : ''} — заплановано!`)
+      }
     }
 
-    const replyText = `✅ **Додано ${tasksToCreate.length} справ!**\n\n${responseLines.join('\n')}`
+    const replyText = isExplicitInbox 
+      ? `📥 **Додано ${tasksToCreate.length} ідей в Inbox!**\n\n${responseLines.join('\n')}`
+      : `⚡ **Сплановано ${tasksToCreate.length} справ!**\n\n${responseLines.join('\n')}`
+
     await sendTelegramMessage(botToken, chatId, replyText)
 
     return NextResponse.json({ ok: true })

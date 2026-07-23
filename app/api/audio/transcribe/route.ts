@@ -75,6 +75,15 @@ export async function POST(req: Request) {
       console.log(`[STT] whisper-1 success`)
     }
 
+    // ─── Очищення заглушок та галюцинацій Whisper (наприклад: "Дякую за перегляд") ───
+    const hallucinationRegex = /(дякую за перегляд|дякуємо за перегляд|субтитри|редактор|продовження слідує|підпишіться|переклад)/i
+    if (hallucinationRegex.test(transcribedText)) {
+      transcribedText = transcribedText.replace(hallucinationRegex, '').trim()
+      if (transcribedText.length < 4) {
+        transcribedText = ''
+      }
+    }
+
     return NextResponse.json({ text: transcribedText })
   } catch (error) {
     console.error('[STT] Internal error:', error)
