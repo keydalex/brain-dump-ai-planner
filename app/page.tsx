@@ -237,7 +237,7 @@ export default function Home() {
 
   const animateSendAndProcess = useCallback(async (blob: Blob, durationMs: number) => {
     if (durationMs < 2000) {
-      showToast('Запис занадто короткий (< 2 сек). Спробуй ще раз', 'info')
+      showToast('Запис занадто короткий. Спробуй ще раз!', 'info')
       return
     }
     setSendAnimating(true)
@@ -1143,8 +1143,37 @@ export default function Home() {
 
                           {/* Мета-рядок */}
                           <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                            <span className="text-[10px] text-[#636366] flex items-center gap-0.5">
-                              <Clock className="w-3 h-3 text-[#5EA5FF]" /> {task.duration} хв
+                            <span className="text-[10px] text-[#636366] flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-[#5EA5FF]" />
+                              <input
+                                type="number"
+                                defaultValue={task.duration}
+                                min={1}
+                                onBlur={async (e) => {
+                                  const newDur = Number(e.target.value)
+                                  if (!newDur || newDur === task.duration) return
+                                  let newSlot = task.timeSlot
+                                  if (task.timeSlot) {
+                                    try {
+                                      const [s] = task.timeSlot.split('-').map((t) => t.trim())
+                                      const [sh, sm] = s.split(':').map(Number)
+                                      const endMin = sh * 60 + sm + newDur
+                                      const eh = String(Math.floor(endMin / 60) % 24).padStart(2, '0')
+                                      const em = String(endMin % 60).padStart(2, '0')
+                                      newSlot = `${s} - ${eh}:${em}`
+                                    } catch {}
+                                  }
+                                  setTasks(tasks.map((t) => (t.id === task.id ? { ...t, duration: newDur, timeSlot: newSlot } : t)))
+                                  await fetch('/api/tasks', {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ id: task.id, duration: newDur, timeSlot: newSlot }),
+                                  })
+                                  showToast(`⏱️ Тривалість оновлено (${newDur} хв)`, 'success')
+                                }}
+                                className="w-10 bg-[#1C1C1E] border border-[#232326] text-white text-[10px] rounded px-1 text-center focus:outline-none focus:border-[#5EA5FF]"
+                                title="Редагувати тривалість у хвилинах (авто-перерахунок часу)"
+                              /> хв
                             </span>
                             <span className="text-[10px] text-[#636366] flex items-center gap-0.5 capitalize">
                               {CATEGORY_EMOJI[task.category] || '📌'} {task.category}
