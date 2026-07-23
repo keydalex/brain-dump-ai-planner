@@ -747,9 +747,8 @@ export default function Home() {
             <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4">
               <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><Mic className="w-4 h-4 text-[#A78BFA]" /> Розпізнавання голосу</h3>
               <select value={sttModel} onChange={(e) => handleSttModelChange(e.target.value)} className="w-full bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-3 py-2.5 focus:outline-none">
-                <option value="whisper-1">🎙️ OpenAI Whisper-1 (14 год / $5 — Найточніший)</option>
+                <option value="whisper-1">🎙️ OpenAI Whisper-1 (14 год / $5 — Золотий Стандарт)</option>
                 <option value="gpt-4o-mini-transcribe">⚡ GPT-4o Mini Transcribe (28 год / $5 — Найдешевший)</option>
-                <option value="gpt-realtime-whisper">🚀 GPT Realtime Whisper (Миттєвий)</option>
               </select>
               <p className="text-[10px] text-[#636366] mt-2">gpt-4o-mini-transcribe — найдешевша модель (у 2 рази дешевша за Whisper)</p>
             </div>

@@ -24,12 +24,12 @@ export async function POST(req: Request) {
 
     let transcribedText = ''
 
-    // ─── 1. GPT-4o Mini Transcribe або GPT Realtime Whisper (через API транскрипцій) ───
-    if (requestedModel === 'gpt-4o-mini-transcribe' || requestedModel === 'gpt-realtime-whisper') {
+    // ─── 1. GPT-4o Mini Transcribe (найдешевша) ───
+    if (requestedModel === 'gpt-4o-mini-transcribe') {
       try {
         const transcribeFormData = new FormData()
         transcribeFormData.append('file', audioFile, audioFile.name || 'audio.webm')
-        transcribeFormData.append('model', requestedModel)
+        transcribeFormData.append('model', 'gpt-4o-mini-transcribe')
         transcribeFormData.append('language', 'uk')
 
         const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -41,17 +41,17 @@ export async function POST(req: Request) {
         if (res.ok) {
           const data = await res.json()
           transcribedText = data.text || ''
-          console.log(`[STT] ${requestedModel} success: "${transcribedText.substring(0, 50)}..."`)
+          console.log(`[STT] gpt-4o-mini-transcribe success: "${transcribedText.substring(0, 50)}..."`)
         } else {
           const errText = await res.text()
-          console.warn(`[STT] ${requestedModel} failed (${res.status}):`, errText)
+          console.warn(`[STT] gpt-4o-mini-transcribe failed (${res.status}):`, errText)
         }
       } catch (err) {
-        console.warn(`[STT] ${requestedModel} exception, falling back to whisper-1:`, err)
+        console.warn(`[STT] gpt-4o-mini-transcribe exception, falling back to whisper-1:`, err)
       }
     }
 
-    // ─── 2. Whisper-1 — основна точна модель (fallback) ───
+    // ─── 2. Whisper-1 — золотий стандарт (дефолт & fallback) ───
     if (!transcribedText) {
       const whisperFD = new FormData()
       whisperFD.append('file', audioFile, audioFile.name || 'audio.webm')
