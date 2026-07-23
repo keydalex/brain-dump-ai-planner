@@ -144,7 +144,7 @@ export default function Home() {
   const [quickAddEndTime, setQuickAddEndTime] = useState('')
   const [quickAddPriority, setQuickAddPriority] = useState(4)
   const [quickAddCategory, setQuickAddCategory] = useState('work')
-  const [quickAddDuration, setQuickAddDuration] = useState(30)
+  const [quickAddDuration, setQuickAddDuration] = useState<string | number>(30)
   const [isQuickAdding, setIsQuickAdding] = useState(false)
 
   useEffect(() => {
@@ -982,7 +982,7 @@ export default function Home() {
                         <option value="fitness">🏋️ Fitness</option>
                         <option value="study">📚 Study</option>
                       </select>
-                      <input type="number" value={t.duration || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].duration = Number(e.target.value) || 0; setDraftTasks(u) }} placeholder="хв" min={1} className="w-14 bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none text-center" />
+                      <input type="number" value={t.duration === 0 || t.duration === ('' as any) ? '' : t.duration} onChange={(e) => { const val = e.target.value; const u = [...draftTasks]; u[idx].duration = val === '' ? ('' as any) : Number(val); setDraftTasks(u) }} placeholder="хв" min={1} className="w-14 bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none text-center" />
                     </div>
                     {t.subtasks?.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-[#232326] flex flex-col gap-1">
@@ -1382,7 +1382,7 @@ export default function Home() {
                       <option value="fitness">🏋️ Fitness</option>
                       <option value="study">📚 Study</option>
                     </select>
-                    <input type="number" value={quickAddDuration} onChange={(e) => setQuickAddDuration(Number(e.target.value) || 30)} placeholder="хв" min={5} className="w-16 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
+                    <input type="number" value={quickAddDuration} onChange={(e) => setQuickAddDuration(e.target.value)} placeholder="хв" min={1} className="w-16 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
                     <div className="flex-1" />
                     <button onClick={handleQuickAdd} disabled={!quickAddTitle.trim() || isQuickAdding} className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-bold rounded-xl active:scale-95 disabled:opacity-40">
                       {isQuickAdding ? '...' : 'Додати'}
