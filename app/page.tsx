@@ -22,7 +22,8 @@ import {
   Calendar as CalendarIcon,
   X,
   Plus,
-  Settings,
+  Edit2,
+  Check,
 } from 'lucide-react'
 import BottomNav from './components/BottomNav'
 import HeatmapCalendar from './components/HeatmapCalendar'
@@ -62,6 +63,22 @@ const CATEGORY_EMOJI: Record<string, string> = {
   inbox: '📥', work: '💻', personal: '👤', fitness: '🏋️', study: '📚',
 }
 
+// Перевірка чи два таймслоти пересікаються
+function doSlotsOverlap(slotA?: string, slotB?: string): boolean {
+  if (!slotA || !slotB) return false
+  const parseMin = (s: string) => {
+    const [h, m] = s.trim().split(':').map(Number)
+    return h * 60 + m
+  }
+  try {
+    const [startA, endA] = slotA.split('-').map(parseMin)
+    const [startB, endB] = slotB.split('-').map(parseMin)
+    return Math.max(startA, startB) < Math.min(endA, endB)
+  } catch {
+    return false
+  }
+}
+
 export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [loadingUser, setLoadingUser] = useState(true)
@@ -79,6 +96,9 @@ export default function Home() {
   const [processStatus, setProcessStatus] = useState('')
   const [isRescheduling, setIsRescheduling] = useState(false)
   const [isSyncingNotion, setIsSyncingNotion] = useState(false)
+
+  // Edit Mode toggle (приховує/показує 🗑️ смітники та ⬆️ ⬇️ стрілки)
+  const [isEditMode, setIsEditMode] = useState(false)
 
   // Toast
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -99,6 +119,10 @@ export default function Home() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
 
+  // Ручне додавання підзадачі
+  const [addingSubtaskParentId, setAddingSubtaskParentId] = useState<string | null>(null)
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
+
   const [telegramPairCode, setTelegramPairCode] = useState<string>('')
   const [parentPageId, setParentPageId] = useState<string>('')
   const [isCreatingNotionDB, setIsCreatingNotionDB] = useState<boolean>(false)
@@ -115,7 +139,8 @@ export default function Home() {
   // Quick add
   const [showQuickAdd, setShowQuickAdd] = useState(false)
   const [quickAddTitle, setQuickAddTitle] = useState('')
-  const [quickAddTime, setQuickAddTime] = useState('')
+  const [quickAddStartTime, setQuickAddStartTime] = useState('')
+  const [quickAddEndTime, setQuickAddEndTime] = useState('')
   const [quickAddPriority, setQuickAddPriority] = useState(4)
   const [quickAddCategory, setQuickAddCategory] = useState('work')
   const [quickAddDuration, setQuickAddDuration] = useState(30)
@@ -208,12 +233,10 @@ export default function Home() {
     }
   }
 
-  // Animate "send pressed" visually then process audio
   const animateSendAndProcess = useCallback(async (blob: Blob) => {
     setSendAnimating(true)
     await new Promise((r) => setTimeout(r, 400))
     setSendAnimating(false)
-    // Now process
     if (!blob || blob.size === 0) {
       showToast('Аудіо порожнє — спробуй ще раз', 'error')
       return
@@ -369,6 +392,34 @@ export default function Home() {
     })
   }
 
+  const handleAddManualSubtask = async (parentId: string) => {
+    if (!newSubtaskTitle.trim()) return
+    const title = newSubtaskTitle.trim()
+    setNewSubtaskTitle('')
+    setAddingSubtaskParentId(null)
+
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          parentId,
+          priority: 4,
+          category: 'inbox',
+          duration: 15,
+        }),
+      })
+      const data = await res.json()
+      if (data.task) {
+        showToast('✅ Підзадачу додано!', 'success')
+        await fetchTasks()
+      }
+    } catch {
+      showToast('Помилка додавання підзадачі', 'error')
+    }
+  }
+
   const handleReschedule = async () => {
     if (!rescheduleSituation.trim()) { showToast('Опиши що сталося', 'info'); return }
     setIsRescheduling(true)
@@ -489,6 +540,17 @@ export default function Home() {
     if (!quickAddTitle.trim()) return
     setIsQuickAdding(true)
     try {
+      let finalSlot: string | null = null
+      if (quickAddStartTime && quickAddEndTime) {
+        finalSlot = `${quickAddStartTime} - ${quickAddEndTime}`
+      } else if (quickAddStartTime && quickAddDuration) {
+        const [h, m] = quickAddStartTime.split(':').map(Number)
+        const endMin = h * 60 + m + Number(quickAddDuration)
+        const endH = String(Math.floor(endMin / 60) % 24).padStart(2, '0')
+        const endM = String(endMin % 60).padStart(2, '0')
+        finalSlot = `${quickAddStartTime} - ${endH}:${endM}`
+      }
+
       const cat = selectedCategory !== 'all' ? selectedCategory : quickAddCategory || 'inbox'
       const res = await fetch('/api/tasks', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -499,14 +561,15 @@ export default function Home() {
             category: cat,
             duration: Number(quickAddDuration) || 30,
             dueDate: selectedDate || formatLocalDate(),
-            timeSlot: quickAddTime || null,
+            timeSlot: finalSlot,
           }]
         }),
       })
       const data = await res.json()
       if (data.success) {
         setQuickAddTitle('')
-        setQuickAddTime('')
+        setQuickAddStartTime('')
+        setQuickAddEndTime('')
         setQuickAddPriority(4)
         setShowQuickAdd(false)
         await fetchTasks()
@@ -516,24 +579,51 @@ export default function Home() {
     } catch { showToast('Помилка', 'error') } finally { setIsQuickAdding(false) }
   }
 
-  // Обмін місцями двох задач з дзеркальною зміною timeSlot
-  const handleSwapTasks = async (taskA: Task, taskB: Task) => {
-    const timeA = taskA.timeSlot
-    const timeB = taskB.timeSlot
+  // Розумний обмін місцями: Зберігаємо ВЛАСНІ тривалості справ!
+  // Справа A починається з першого часу, справа B починається ОДРАЗУ після неї.
+  const handleSwapTasksSequentialMath = async (taskA: Task, taskB: Task) => {
+    if (!taskA.timeSlot || !taskB.timeSlot) return
+
+    const parseMin = (s: string) => {
+      const [h, m] = s.trim().split(':').map(Number)
+      return h * 60 + m
+    }
+    const formatMin = (mTotal: number) => {
+      const h = String(Math.floor(mTotal / 60) % 24).padStart(2, '0')
+      const m = String(mTotal % 60).padStart(2, '0')
+      return `${h}:${m}`
+    }
+
+    const startA = parseMin(taskA.timeSlot.split('-')[0])
+    
+    // Власні тривалості справ
+    const durA = taskA.duration || 30
+    const durB = taskB.duration || 30
+
+    // Коли міняємо (B стає першою, A стає другою):
+    // B стає на startA і триває durB хвилин
+    const newStartB = startA
+    const newEndB = newStartB + durB
+    const newSlotB = `${formatMin(newStartB)} - ${formatMin(newEndB)}`
+
+    // A стає одразу після B (на newEndB) і триває свій durA
+    const newStartA = newEndB
+    const newEndA = newStartA + durA
+    const newSlotA = `${formatMin(newStartA)} - ${formatMin(newEndA)}`
 
     setTasks((prev) =>
       prev.map((t) => {
-        if (t.id === taskA.id) return { ...t, timeSlot: timeB }
-        if (t.id === taskB.id) return { ...t, timeSlot: timeA }
+        if (t.id === taskA.id) return { ...t, timeSlot: newSlotA }
+        if (t.id === taskB.id) return { ...t, timeSlot: newSlotB }
         return t
       })
     )
 
     await Promise.all([
-      fetch('/api/tasks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: taskA.id, timeSlot: timeB }) }),
-      fetch('/api/tasks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: taskB.id, timeSlot: timeA }) }),
+      fetch('/api/tasks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: taskA.id, timeSlot: newSlotA }) }),
+      fetch('/api/tasks', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: taskB.id, timeSlot: newSlotB }) }),
     ])
-    showToast('🔄 Задачі поміняно місцями!', 'success')
+    showToast('🔄 Послідовно перераховано розклад!', 'success')
   }
 
   const filteredTasks = (
@@ -544,6 +634,11 @@ export default function Home() {
     const tB = b.timeSlot ? b.timeSlot.split('-')[0].trim() : '99:99'
     return tA.localeCompare(tB)
   })
+
+  // Розрахунок відсотка виконання задач за сьогодні
+  const doneTasksCount = tasks.filter((t) => t.status === 'done').length
+  const totalTasksCount = tasks.length
+  const completionPercent = totalTasksCount > 0 ? Math.round((doneTasksCount / totalTasksCount) * 100) : 0
 
   if (loadingUser) {
     return (
@@ -590,29 +685,52 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex items-center gap-0.5">
-          <button onClick={handleSyncNotion} disabled={isSyncingNotion} className="p-2 text-[#A78BFA] hover:text-white rounded-xl hover:bg-[#161618] transition-all" title="Синхронізувати з Notion">
-            <Share2 className={`w-4 h-4 ${isSyncingNotion ? 'animate-spin' : ''}`} />
-          </button>
-          {/* ? кнопка — spotlight onboarding */}
-          <button id="onboarding-btn" onClick={() => setShowOnboarding(true)} className="p-2 text-[#8E8E93] hover:text-white rounded-xl hover:bg-[#161618] transition-all" title="Гід по додатку">
-            <HelpCircle className="w-4 h-4" />
-          </button>
-          {user ? (
-            <div className="flex items-center gap-1">
+        {/* Міні-кругова діаграма прогресу як на скріншоті з цифрою всередині */}
+        <div className="flex items-center gap-3">
+          {totalTasksCount > 0 && (
+            <div className="flex items-center gap-2 bg-[#161618] border border-[#232326] px-2.5 py-1 rounded-xl" title={`Виконано ${doneTasksCount} з ${totalTasksCount} справ`}>
+              <div className="relative w-7 h-7 flex items-center justify-center">
+                <svg className="w-7 h-7 transform -rotate-90" viewBox="0 0 36 36">
+                  <path
+                    className="text-[#232326]"
+                    strokeWidth="3.5"
+                    stroke="currentColor"
+                    fill="none"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  />
+                  <path
+                    className="text-[#10B981] transition-all duration-500 ease-out"
+                    strokeDasharray={`${completionPercent}, 100`}
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    stroke="currentColor"
+                    fill="none"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  />
+                </svg>
+                <span className="absolute text-[8px] font-extrabold text-white">{completionPercent}%</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-0.5">
+            <button onClick={handleSyncNotion} disabled={isSyncingNotion} className="p-2 text-[#A78BFA] hover:text-white rounded-xl hover:bg-[#161618] transition-all" title="Синхронізувати з Notion">
+              <Share2 className={`w-4 h-4 ${isSyncingNotion ? 'animate-spin' : ''}`} />
+            </button>
+            <button id="onboarding-btn" onClick={() => setShowOnboarding(true)} className="p-2 text-[#8E8E93] hover:text-white rounded-xl hover:bg-[#161618] transition-all" title="Гід по додатку">
+              <HelpCircle className="w-4 h-4" />
+            </button>
+            {user ? (
               <button onClick={async () => {
                 await fetch('/api/auth/logout', { method: 'POST' })
                 setUser(null); setTasks([]); setShowAuthModal(true)
               }} className="p-2 text-[#8E8E93] hover:text-[#FF5E5E] rounded-xl hover:bg-[#161618] transition-all" title="Вийти">
                 <LogOut className="w-4 h-4" />
               </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 ml-1">
-              <button onClick={handleActivateDemo} className="px-2.5 py-1.5 bg-[#FFAE58]/20 text-[#FFAE58] text-xs font-bold rounded-xl active:scale-95 transition-all">Демо</button>
-              <button onClick={() => setShowAuthModal(true)} className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-semibold rounded-xl active:scale-95">Увійти</button>
-            </div>
-          )}
+            ) : (
+              <button onClick={() => setShowAuthModal(true)} className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-semibold rounded-xl active:scale-95 ml-1">Увійти</button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -621,82 +739,82 @@ export default function Home() {
         {/* Поле вводу */}
         {activeTab !== 'settings' && (
           <div id="input-area" className="bg-[#161618] border border-[#232326] rounded-2xl p-3 shadow-lg">
-          <div className="flex items-start gap-2">
-            {/* Велика стильна кнопка мікрофона (у 2 рази більша з неоновим сяйвом) */}
-            <button
-              id="mic-btn"
-              onClick={isRecording ? stopRecording : startRecording}
-              className={`shrink-0 w-20 h-20 rounded-3xl flex items-center justify-center transition-all active:scale-90 relative ${
-                isRecording
-                  ? 'bg-gradient-to-tr from-[#FF5E5E] via-[#FF3B3B] to-[#FFAE58] shadow-2xl shadow-[#FF5E5E]/80 animate-pulse scale-105 border-2 border-white/40'
-                  : 'bg-gradient-to-tr from-[#FF5E5E] via-[#A78BFA] to-[#5EA5FF] shadow-xl shadow-[#FF5E5E]/40 hover:scale-105 hover:shadow-2xl border border-white/20'
-              }`}
-              title={isRecording ? 'Зупинити запис' : 'Голосовий ввід'}
-            >
-              <Mic className={`transition-transform ${isRecording ? 'w-9 h-9 text-white animate-bounce' : 'w-8 h-8 text-white'}`} />
-              {isRecording && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#10B981] rounded-full border-2 border-[#161618] animate-ping" />
-              )}
-            </button>
+            <div className="flex items-start gap-2.5">
+              {/* Преміальна темна кнопка мікрофона без зайвого сяйва */}
+              <button
+                id="mic-btn"
+                onClick={isRecording ? stopRecording : startRecording}
+                className={`shrink-0 w-20 h-20 rounded-2xl flex flex-col items-center justify-center transition-all active:scale-95 border ${
+                  isRecording
+                    ? 'bg-[#1C1C1E] border-[#FF5E5E] text-[#FF5E5E] shadow-lg shadow-[#FF5E5E]/20'
+                    : 'bg-[#1C1C1E] border-[#232326] text-white hover:border-[#FF5E5E]/50'
+                }`}
+                title={isRecording ? 'Зупинити запис' : 'Голосовий ввід'}
+              >
+                <Mic className={`w-7 h-7 mb-1 ${isRecording ? 'text-[#FF5E5E] animate-pulse' : 'text-white'}`} />
+                <span className="text-[9px] font-bold uppercase tracking-wider text-[#8E8E93]">
+                  {isRecording ? 'Запис...' : 'Голос'}
+                </span>
+              </button>
 
-            <div className="flex-1 min-w-0">
-              <textarea
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText() }
-                }}
-                placeholder={isRecording ? '🔴 Запис іде...' : 'Що в голові? Надиктуй або напиши...'}
-                disabled={isProcessing || isRecording}
-                rows={2}
-                className="w-full bg-transparent text-white text-sm rounded-xl focus:outline-none min-h-[48px] max-h-[100px] resize-none placeholder:text-[#636366]"
-              />
-              {processStatus && (
-                <div className="text-[10px] text-[#A78BFA] flex items-center gap-1 animate-pulse mt-0.5">
-                  <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
-                  <span>{processStatus}</span>
-                </div>
-              )}
+              <div className="flex-1 min-w-0">
+                <textarea
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText() }
+                  }}
+                  placeholder={isRecording ? '🔴 Запис іде...' : 'Що в голові? Надиктуй або напиши...'}
+                  disabled={isProcessing || isRecording}
+                  rows={2}
+                  className="w-full bg-transparent text-white text-sm rounded-xl focus:outline-none min-h-[52px] max-h-[100px] resize-none placeholder:text-[#636366]"
+                />
+                {processStatus && (
+                  <div className="text-[10px] text-[#A78BFA] flex items-center gap-1 animate-pulse mt-0.5">
+                    <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+                    <span>{processStatus}</span>
+                  </div>
+                )}
+              </div>
+
+              <button
+                id="send-btn"
+                onClick={handleSendText}
+                disabled={isProcessing || !inputText.trim()}
+                className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-90 mt-1 ${
+                  sendAnimating
+                    ? 'bg-[#10B981] scale-90 shadow-lg shadow-[#10B981]/40'
+                    : inputText.trim()
+                    ? 'bg-[#FF5E5E] shadow-md shadow-[#FF5E5E]/30'
+                    : 'bg-[#232326] opacity-40'
+                }`}
+              >
+                <Send className="w-4 h-4 text-white" />
+              </button>
             </div>
 
-            <button
-              id="send-btn"
-              onClick={handleSendText}
-              disabled={isProcessing || !inputText.trim()}
-              className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-90 mt-1 ${
-                sendAnimating
-                  ? 'bg-[#10B981] scale-90 shadow-lg shadow-[#10B981]/40'
-                  : inputText.trim()
-                  ? 'bg-[#FF5E5E] shadow-md shadow-[#FF5E5E]/30'
-                  : 'bg-[#232326] opacity-40'
-              }`}
-            >
-              <Send className="w-4 h-4 text-white" />
-            </button>
-          </div>
+            {/* Форс-мажор + моделі */}
+            <div className="flex items-center gap-2 mt-2.5 pt-2 border-t border-[#1C1C1E]">
+              <button
+                id="force-majeure-btn"
+                onClick={() => setShowRescheduleModal(true)}
+                className="flex-1 py-2 bg-gradient-to-r from-[#FF5E5E]/15 to-[#FFAE58]/15 hover:from-[#FF5E5E]/25 hover:to-[#FFAE58]/25 border border-[#FF5E5E]/30 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-98"
+              >
+                <span>🚨</span> Форс-мажор
+              </button>
 
-          {/* Форс-мажор + моделі */}
-          <div className="flex items-center gap-2 mt-2.5 pt-2 border-t border-[#1C1C1E]">
-            <button
-              id="force-majeure-btn"
-              onClick={() => setShowRescheduleModal(true)}
-              className="flex-1 py-2 bg-gradient-to-r from-[#FF5E5E]/15 to-[#FFAE58]/15 hover:from-[#FF5E5E]/25 hover:to-[#FFAE58]/25 border border-[#FF5E5E]/30 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-98"
-            >
-              <span>🚨</span> Форс-мажор
-            </button>
-
-            <select
-              value={selectedModel}
-              onChange={(e) => { setSelectedModel(e.target.value); localStorage.setItem('aiModel', e.target.value) }}
-              className="bg-[#1C1C1E] border border-[#232326] text-[#8E8E93] text-[10px] px-1.5 py-2 rounded-xl focus:outline-none"
-            >
-              <option value="gemini-3.1-flash-lite">⭐ Gemini 3.1 Flash Lite (500 RPD)</option>
-              <option value="gemini-3.5-flash-lite">⚡ Gemini 3.5 Flash Lite (500 RPD)</option>
-              <option value="gemini-2.5-flash-lite">💎 Gemini 2.5 Flash Lite (500 RPD)</option>
-              <option value="gemini-2-flash-lite">🛡️ Gemini 2 Flash Lite (500 RPD)</option>
-            </select>
+              <select
+                value={selectedModel}
+                onChange={(e) => { setSelectedModel(e.target.value); localStorage.setItem('aiModel', e.target.value) }}
+                className="bg-[#1C1C1E] border border-[#232326] text-[#8E8E93] text-[10px] px-1.5 py-2 rounded-xl focus:outline-none"
+              >
+                <option value="gemini-3.1-flash-lite">⭐ Gemini 3.1 Flash Lite (500 RPD)</option>
+                <option value="gemini-3.5-flash-lite">⚡ Gemini 3.5 Flash Lite (500 RPD)</option>
+                <option value="gemini-2.5-flash-lite">💎 Gemini 2.5 Flash Lite (500 RPD)</option>
+                <option value="gemini-2-flash-lite">🛡️ Gemini 2 Flash Lite (500 RPD)</option>
+              </select>
+            </div>
           </div>
-        </div>
         )}
 
         {/* Фільтр категорій */}
@@ -819,12 +937,10 @@ export default function Home() {
                 const pc = PRIORITY_CONFIG[t.priority] || PRIORITY_CONFIG[4]
                 return (
                   <div key={idx} className={`bg-[#161618] border border-[#232326] border-l-4 ${pc.border} rounded-xl p-3`}>
-                    {/* Назва */}
                     <input type="text" value={t.title}
                       onChange={(e) => { const u = [...draftTasks]; u[idx].title = e.target.value; setDraftTasks(u) }}
                       className="w-full bg-transparent text-white text-sm font-medium focus:outline-none mb-2"
                     />
-                    {/* Поля редагування */}
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <input type="text" value={t.timeSlot || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].timeSlot = e.target.value; setDraftTasks(u) }} placeholder="⏰ 14:00 - 15:00" className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none" />
                       <input type="date" value={t.dueDate || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].dueDate = e.target.value; setDraftTasks(u) }} className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none" />
@@ -876,9 +992,25 @@ export default function Home() {
               <span className="text-[11px] text-[#636366] font-semibold uppercase tracking-wider">
                 {filteredTasks.filter((t) => t.status === 'todo').length} активних
               </span>
-              <div className="flex items-center gap-1 bg-[#161618] border border-[#232326] p-0.5 rounded-xl">
-                <button onClick={() => setSortBy('time')} className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${sortBy === 'time' ? 'bg-[#FF5E5E] text-white' : 'text-[#636366]'}`}>🕒 Час</button>
-                <button onClick={() => setSortBy('priority')} className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${sortBy === 'priority' ? 'bg-[#FF5E5E] text-white' : 'text-[#636366]'}`}>🎯 Пріор.</button>
+
+              <div className="flex items-center gap-2">
+                {/* Кнопка "Edit Mode" — приховує/показує 🗑️ та стрілки */}
+                <button
+                  onClick={() => setIsEditMode(!isEditMode)}
+                  className={`px-2.5 py-1 text-[10px] font-bold rounded-xl border flex items-center gap-1 transition-all ${
+                    isEditMode
+                      ? 'bg-[#FF5E5E] text-white border-[#FF5E5E]'
+                      : 'bg-[#161618] text-[#8E8E93] border-[#232326] hover:text-white'
+                  }`}
+                >
+                  {isEditMode ? <Check className="w-3 h-3" /> : <Edit2 className="w-3 h-3" />}
+                  <span>{isEditMode ? 'Готово' : 'Edit'}</span>
+                </button>
+
+                <div className="flex items-center gap-1 bg-[#161618] border border-[#232326] p-0.5 rounded-xl">
+                  <button onClick={() => setSortBy('time')} className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-all ${sortBy === 'time' ? 'bg-[#FF5E5E] text-white' : 'text-[#636366]'}`}>🕒 Час</button>
+                  <button onClick={() => setSortBy('priority')} className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-all ${sortBy === 'priority' ? 'bg-[#FF5E5E] text-white' : 'text-[#636366]'}`}>🎯 Пріор.</button>
+                </div>
               </div>
             </div>
 
@@ -906,10 +1038,10 @@ export default function Home() {
                   const doneCount = task.subtasks?.filter((s) => s.status === 'done').length || 0
                   const totalSubs = task.subtasks?.length || 0
 
-                  // Перевірка на пересікання часу з іншими задачами
+                  // Перевірка на конфлікт часу
                   const hasConflict = !!(
                     task.timeSlot &&
-                    filteredTasks.some((other) => other.id !== task.id && other.timeSlot && other.timeSlot === task.timeSlot)
+                    filteredTasks.some((other) => other.id !== task.id && doSlotsOverlap(task.timeSlot, other.timeSlot))
                   )
 
                   const prevTask = idx > 0 ? filteredTasks[idx - 1] : null
@@ -923,7 +1055,7 @@ export default function Home() {
                     >
                       {/* Основний рядок */}
                       <div className="flex items-start gap-2.5 p-3">
-                        {/* Чекбокс та розгортання підзадач — КРАЙНІ ЛІВІ */}
+                        {/* Чекбокс + розгортання підзадач — КРАЙНІ ЛІВІ */}
                         <div className="flex items-center gap-1 shrink-0 mt-0.5">
                           <button onClick={() => toggleTaskStatus(task)} className="text-[#636366] hover:text-[#FF5E5E] transition-colors">
                             {isDone ? <CheckCircle2 className="w-5 h-5 text-[#FF5E5E]" /> : <Circle className="w-5 h-5" />}
@@ -940,9 +1072,9 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* Весь текст + мета */}
+                        {/* Текст + мета */}
                         <div className="flex-1 min-w-0">
-                          {/* Час + конфлікт + перенесено */}
+                          {/* Час + Конфлікт */}
                           <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                             {task.timeSlot && (
                               <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold tracking-wide ${
@@ -954,8 +1086,8 @@ export default function Home() {
                               </span>
                             )}
                             {hasConflict && (
-                              <span className="text-[9px] bg-[#FF5E5E]/20 text-[#FF5E5E] px-1.5 py-0.5 rounded-md font-bold border border-[#FF5E5E]/40" title="Конфлікт часу — 2 справи на один час!">
-                                ⚠️ Пересікання часу
+                              <span className="text-[9px] bg-[#FF5E5E]/20 text-[#FF5E5E] px-1.5 py-0.5 rounded-md font-bold border border-[#FF5E5E]/40" title="Конфлікт часу — дві справи накладаються!">
+                                ⚠️ Конфлікт часу
                               </span>
                             )}
                             {task.isCarriedOver && (
@@ -963,7 +1095,7 @@ export default function Home() {
                             )}
                           </div>
 
-                          {/* Назва — редагується по двіймому кліку */}
+                          {/* Назва */}
                           {isEditing ? (
                             <input autoFocus value={editingTitle}
                               onChange={(e) => setEditingTitle(e.target.value)}
@@ -995,9 +1127,8 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Рядок дій — знизу окремо (Notion-стиль) */}
+                      {/* Рядок дій (Notion-стиль) */}
                       <div className="flex items-center gap-1 px-3 pb-2.5 border-t border-[#1C1C1E]">
-                        {/* Пріоритет */}
                         <select
                           value={task.priority}
                           onChange={async (e) => {
@@ -1014,21 +1145,31 @@ export default function Home() {
                           <option value={4}>⚪ P4</option>
                         </select>
 
-                        {/* Кнопки підйому / опускання справи (обмін місцями + дзеркальний timeSlot) */}
-                        {prevTask && (
-                          <button onClick={() => handleSwapTasks(task, prevTask)} className="p-1 text-[#636366] hover:text-[#FFAE58] text-[10px] rounded hover:bg-[#1C1C1E]" title="Пересунути вгору (поміняти час)">
+                        {/* Кнопки обміну місцями — ТІЛЬКИ в Edit Mode */}
+                        {isEditMode && prevTask && (
+                          <button onClick={() => handleSwapTasksSequentialMath(task, prevTask)} className="p-1 text-[#FFAE58] text-xs font-bold rounded hover:bg-[#1C1C1E]" title="Пересунути вгору (послідовний обмін часу)">
                             ▲
                           </button>
                         )}
-                        {nextTask && (
-                          <button onClick={() => handleSwapTasks(task, nextTask)} className="p-1 text-[#636366] hover:text-[#FFAE58] text-[10px] rounded hover:bg-[#1C1C1E]" title="Пересунути вниз (поміняти час)">
+                        {isEditMode && nextTask && (
+                          <button onClick={() => handleSwapTasksSequentialMath(task, nextTask)} className="p-1 text-[#FFAE58] text-xs font-bold rounded hover:bg-[#1C1C1E]" title="Пересунути вниз (послідовний обмін часу)">
                             ▼
                           </button>
                         )}
 
                         <div className="flex-1" />
 
-                        {/* Google Calendar */}
+                        {/* Кнопка швидкого ручного додавання підзадачі */}
+                        <button
+                          onClick={() => {
+                            setAddingSubtaskParentId(addingSubtaskParentId === task.id ? null : task.id)
+                            setExpandedTaskIds({ ...expandedTaskIds, [task.id]: true })
+                          }}
+                          className="text-[10px] text-[#5EA5FF] hover:text-white font-semibold flex items-center gap-0.5 px-2 py-0.5 rounded-lg hover:bg-[#1C1C1E]"
+                        >
+                          <Plus className="w-3 h-3" /> Підзадача
+                        </button>
+
                         <a
                           href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(task.title)}&details=${encodeURIComponent('Brain Dump AI Planner')}&dates=${task.dueDate ? task.dueDate.replace(/-/g, '') : ''}/${task.dueDate ? task.dueDate.replace(/-/g, '') : ''}`}
                           target="_blank" rel="noreferrer"
@@ -1038,13 +1179,40 @@ export default function Home() {
                           <CalendarIcon className="w-3.5 h-3.5" />
                         </a>
 
-                        {/* Видалити */}
-                        <button onClick={() => deleteTask(task.id)} className="p-1.5 text-[#636366] hover:text-[#FF5E5E] transition-colors rounded-lg hover:bg-[#1C1C1E]">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {/* Видалити — ТІЛЬКИ в Edit Mode */}
+                        {isEditMode && (
+                          <button onClick={() => deleteTask(task.id)} className="p-1.5 text-[#FF5E5E] hover:text-red-400 transition-colors rounded-lg hover:bg-[#1C1C1E]" title="Видалити задачу">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
 
-                      {/* Підзадачі */}
+                      {/* Поле додавання підзадачі вручну */}
+                      {addingSubtaskParentId === task.id && (
+                        <div className="px-3 pb-2.5 pt-1 border-t border-[#1C1C1E] flex items-center gap-2">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={newSubtaskTitle}
+                            onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddManualSubtask(task.id)
+                              if (e.key === 'Escape') setAddingSubtaskParentId(null)
+                            }}
+                            placeholder="Назва підзадачі..."
+                            className="flex-1 bg-[#1C1C1E] border border-[#5EA5FF] text-white text-xs rounded-xl px-2.5 py-1.5 focus:outline-none"
+                          />
+                          <button
+                            onClick={() => handleAddManualSubtask(task.id)}
+                            disabled={!newSubtaskTitle.trim()}
+                            className="px-3 py-1.5 bg-[#5EA5FF] text-white text-xs font-bold rounded-xl active:scale-95 disabled:opacity-40"
+                          >
+                            Додати
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Розгорнуті підзадачі */}
                       {isExpanded && task.subtasks && task.subtasks.length > 0 && (
                         <div className="px-3 pb-3 border-t border-[#1C1C1E] flex flex-col gap-1.5 pt-2.5">
                           {task.subtasks.map((sub) => (
@@ -1066,7 +1234,7 @@ export default function Home() {
               )}
             </div>
 
-            {/* Кнопка "+" — швидке додавання з автозаповненою категорією та тривалістю */}
+            {/* Швидке додавання вручну */}
             {!showQuickAdd ? (
               <button onClick={() => setShowQuickAdd(true)} className="w-full py-3 border-2 border-dashed border-[#232326] hover:border-[#FF5E5E]/50 text-[#636366] hover:text-[#FF5E5E] rounded-2xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-98 mt-1">
                 <Plus className="w-4 h-4" /> Швидко додати задачу
@@ -1079,8 +1247,17 @@ export default function Home() {
                   placeholder="Назва задачі..."
                   className="w-full bg-transparent text-white text-sm focus:outline-none"
                 />
-                <div className="grid grid-cols-3 gap-2">
-                  <input type="time" value={quickAddTime} onChange={(e) => setQuickAddTime(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] text-[#8E8E93]">Початок:</span>
+                    <input type="time" value={quickAddStartTime} onChange={(e) => setQuickAddStartTime(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] text-[#8E8E93]">Кінець (або тривалість):</span>
+                    <input type="time" value={quickAddEndTime} onChange={(e) => setQuickAddEndTime(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
                   <select value={quickAddPriority} onChange={(e) => setQuickAddPriority(Number(e.target.value))} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none">
                     <option value={1}>🔴 P1</option>
                     <option value={2}>🟠 P2</option>
@@ -1094,10 +1271,7 @@ export default function Home() {
                     <option value="fitness">🏋️ Fitness</option>
                     <option value="study">📚 Study</option>
                   </select>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input type="number" value={quickAddDuration} onChange={(e) => setQuickAddDuration(Number(e.target.value) || 30)} placeholder="хв" min={5} className="w-20 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
-                  <span className="text-[10px] text-[#636366]">хв за замовчуванням</span>
+                  <input type="number" value={quickAddDuration} onChange={(e) => setQuickAddDuration(Number(e.target.value) || 30)} placeholder="хв" min={5} className="w-16 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
                   <div className="flex-1" />
                   <button onClick={handleQuickAdd} disabled={!quickAddTitle.trim() || isQuickAdding} className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-bold rounded-xl active:scale-95 disabled:opacity-40">
                     {isQuickAdding ? '...' : 'Додати'}
