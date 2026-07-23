@@ -471,7 +471,8 @@ export default function Home() {
     try {
       const res = await fetch('/api/payment/checkout', { method: 'POST' })
       const data = await res.json()
-      if (data.pageUrl) window.location.href = data.pageUrl
+      if (data.jarUrl) window.location.href = data.jarUrl
+      else if (data.pageUrl) window.location.href = data.pageUrl
       else if (data.success) { setUser({ ...user, isPremium: true }); showToast('🎉 Преміум активовано!', 'success') }
     } catch { showToast('Помилка платежу', 'error') }
   }

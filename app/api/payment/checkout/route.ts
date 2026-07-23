@@ -10,9 +10,16 @@ export async function POST() {
     }
 
     const monoToken = process.env.MONOBANK_API_KEY
+    const monoJarUrl = process.env.MONO_JAR_URL
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://brain-dump-ai-planner.vercel.app'
 
-    // 1. Якщо підключено Monobank API Token
+    // 1. Якщо налаштовано посилання на Монобанку в .env (MONO_JAR_URL)
+    if (monoJarUrl) {
+      const jarUrlWithComment = `${monoJarUrl}?t=${encodeURIComponent(`Користувач: ${user.email}`)}`
+      return NextResponse.json({ jarUrl: jarUrlWithComment })
+    }
+
+    // 2. Якщо підключено Monobank Merchant API Token
     if (monoToken) {
       const monoRes = await fetch('https://api.monobank.ua/api/merchant/invoice/create', {
         method: 'POST',
