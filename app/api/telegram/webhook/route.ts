@@ -141,108 +141,123 @@ export async function POST(req: Request) {
     const isExplicitForce = extractedText.toLowerCase().startsWith('/force') || extractedText.toLowerCase().startsWith('force')
     if (isExplicitForce) {
       await sendTelegramMessage(botToken, chatId, '🚨 **Прийняв форс-мажор!** Розчищаю розклад та інтегрую термінову справу...')
-      const forceText = extractedText.replace(/^\/force\s*/i, '').replace(/^force\s*/i, '').trim()
+      const forceText = extractedText.replace(/^\/force\s*/i, '').replace(/^force\s*/i, '').trim() || 'Терміновий форс-мажор'
       const activeTasks = await prisma.task.findMany({ where: { userId: user.id, status: 'todo' } })
       const currentTimeStr = getKyivTimeStr()
 
+      const [y, m, d] = todayStr.split('-').map(Number)
+      const targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+
+      let newTaskTitle = forceText
+      let newTaskPriority = forceText.toLowerCase().includes('p2') ? 2 : 1
+      let newTaskDuration = 60
+      let newTaskTimeSlot: string | null = null
+      let rescheduledTasks: any[] = []
+
       if (process.env.GEMINI_API_KEY) {
-        const apiKey = process.env.GEMINI_API_KEY
-        const prompt = `Сьогодні за Києвом: ${todayStr}, поточний час: ${currentTimeStr}.
-Ти — кризовий AI-диспечер. Стався форс-мажор: "${forceText || 'термінова справа'}"
+        try {
+          const apiKey = process.env.GEMINI_API_KEY
+          const prompt = `Сьогодні за Києвом: ${todayStr}, поточний час: ${currentTimeStr}.
+Ти — кризовий AI-диспечер. Стався форс-мажор: "${forceText}"
 
 Активні завдання користувача на сьогодні:
 ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority, timeSlot: t.timeSlot })))}
 
 Вимоги:
-1. Створи нову задачу з пріоритетом P1 (найвищий, за замовчуванням) або P2 (якщо вказано меншу терміновість) на сьогодні (${todayStr}).
-2. Якщо не вистачає часу, перенеси менш важливі справи (P3, P4) на завтра (${todayStr} + 1 день) або посунь їх у часі без прогалин.`
+1. Створи нову задачу P1 на сьогодні (${todayStr}).
+2. Менш важливі задачі (P3, P4) здвинь або перенеси на завтра (${todayStr} + 1 день).`
 
-        const forceRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              systemInstruction: { parts: [{ text: 'Ти — кризовий AI-диспечер. Повертай JSON для форс-мажору.' }] },
-              generationConfig: {
-                temperature: 0.2,
-                responseMimeType: 'application/json',
-                responseSchema: {
-                  type: 'OBJECT',
-                  properties: {
-                    newTaskTitle: { type: 'STRING' },
-                    newTaskPriority: { type: 'INTEGER', description: '1 або 2' },
-                    newTaskDuration: { type: 'INTEGER' },
-                    newTaskTimeSlot: { type: 'STRING', nullable: true },
-                    rescheduledTasks: {
-                      type: 'ARRAY',
-                      items: {
-                        type: 'OBJECT',
-                        properties: {
-                          taskId: { type: 'STRING' },
-                          newDueDate: { type: 'STRING', nullable: true },
-                          newPriority: { type: 'INTEGER', nullable: true },
-                          newTimeSlot: { type: 'STRING', nullable: true },
+          const forceRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: 'Ти — кризовий AI-диспечер. Повертай JSON для форс-мажору.' }] },
+                generationConfig: {
+                  temperature: 0.2,
+                  responseMimeType: 'application/json',
+                  responseSchema: {
+                    type: 'OBJECT',
+                    properties: {
+                      newTaskTitle: { type: 'STRING' },
+                      newTaskPriority: { type: 'INTEGER' },
+                      newTaskDuration: { type: 'INTEGER' },
+                      newTaskTimeSlot: { type: 'STRING', nullable: true },
+                      rescheduledTasks: {
+                        type: 'ARRAY',
+                        items: {
+                          type: 'OBJECT',
+                          properties: {
+                            taskId: { type: 'STRING' },
+                            newDueDate: { type: 'STRING', nullable: true },
+                            newPriority: { type: 'INTEGER', nullable: true },
+                            newTimeSlot: { type: 'STRING', nullable: true },
+                          },
+                          required: ['taskId'],
                         },
-                        required: ['taskId'],
                       },
                     },
+                    required: ['newTaskTitle'],
                   },
-                  required: ['newTaskTitle'],
                 },
-              },
-            }),
+              }),
+            }
+          )
+
+          if (forceRes.ok) {
+            const forceData = await forceRes.json()
+            const pText = forceData.candidates?.[0]?.content?.parts?.[0]?.text
+            if (pText) {
+              const parsed = JSON.parse(pText)
+              if (parsed.newTaskTitle) newTaskTitle = parsed.newTaskTitle
+              if (parsed.newTaskDuration) newTaskDuration = parsed.newTaskDuration
+              if (parsed.newTaskTimeSlot) newTaskTimeSlot = parsed.newTaskTimeSlot
+              if (parsed.newTaskPriority === 2) newTaskPriority = 2
+              if (Array.isArray(parsed.rescheduledTasks)) rescheduledTasks = parsed.rescheduledTasks
+            }
           }
-        )
-
-        if (forceRes.ok) {
-          const forceData = await forceRes.json()
-          const pText = forceData.candidates?.[0]?.content?.parts?.[0]?.text
-          if (pText) {
-            const { newTaskTitle, newTaskPriority, newTaskDuration, newTaskTimeSlot, rescheduledTasks } = JSON.parse(pText)
-            const [y, m, d] = todayStr.split('-').map(Number)
-            const targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
-
-            await prisma.$transaction(async (tx) => {
-              await tx.task.create({
-                data: {
-                  userId: user.id,
-                  title: (newTaskTitle || forceText).trim(),
-                  priority: newTaskPriority === 2 ? 2 : 1,
-                  category: 'work',
-                  duration: newTaskDuration || 60,
-                  dueDate: targetDate,
-                  timeSlot: newTaskTimeSlot || null,
-                },
-              })
-
-              if (Array.isArray(rescheduledTasks)) {
-                for (const rt of rescheduledTasks) {
-                  const updateObj: any = {}
-                  if (rt.newPriority) updateObj.priority = rt.newPriority
-                  if (rt.newTimeSlot !== undefined) updateObj.timeSlot = rt.newTimeSlot
-                  if (rt.newDueDate) {
-                    const [ry, rm, rd] = rt.newDueDate.split('-').map(Number)
-                    updateObj.dueDate = new Date(Date.UTC(ry, rm - 1, rd, 12, 0, 0, 0))
-                  }
-                  await tx.task.update({ where: { id: rt.taskId }, data: updateObj }).catch(() => {})
-                }
-              }
-            })
-
-            const summaryMsg = `🔥 **Форс-мажор розчищено!**\n\n📌 **Додано термінову P1 задачу:** ${newTaskTitle || forceText}\n📦 **Переплановано:** ${rescheduledTasks?.length || 0} справ.`
-            await sendTelegramMessage(botToken, chatId, summaryMsg)
-            return NextResponse.json({ ok: true })
-          }
+        } catch (e) {
+          console.error('Force Majeure Gemini Error:', e)
         }
       }
+
+      // 🛡️ ЗБЕРЕЖЕННЯ В ТРАНЗАКЦІЇ ТА ЖОРСТКІ ГАРАНТІЇ (TypeScript Post-Processing)
+      await prisma.$transaction(async (tx) => {
+        await tx.task.create({
+          data: {
+            userId: user.id,
+            title: newTaskTitle.trim(),
+            priority: newTaskPriority, // Hardcoded P1 / P2 guarantee
+            category: 'work',
+            duration: newTaskDuration,
+            dueDate: targetDate, // Hardcoded Today date guarantee
+            timeSlot: newTaskTimeSlot,
+          },
+        })
+
+        for (const rt of rescheduledTasks) {
+          const updateObj: any = {}
+          if (rt.newPriority) updateObj.priority = rt.newPriority
+          if (rt.newTimeSlot !== undefined) updateObj.timeSlot = rt.newTimeSlot
+          if (rt.newDueDate) {
+            const [ry, rm, rd] = rt.newDueDate.split('-').map(Number)
+            updateObj.dueDate = new Date(Date.UTC(ry, rm - 1, rd, 12, 0, 0, 0))
+          }
+          await tx.task.update({ where: { id: rt.taskId }, data: updateObj }).catch(() => {})
+        }
+      })
+
+      const summaryMsg = `🔥 **Форс-мажор успішно інтегровано!**\n\n📌 **Додано P${newTaskPriority} задачу:** ${newTaskTitle}\n📅 **Дата:** сьогодні (${todayStr})\n📦 **Переплановано:** ${rescheduledTasks.length} справ.`
+      await sendTelegramMessage(botToken, chatId, summaryMsg)
+      return NextResponse.json({ ok: true })
     }
 
     const isExplicitInbox = extractedText.toLowerCase().startsWith('/inbox') || extractedText.toLowerCase().startsWith('inbox')
 
     // Створення завдань через Gemini AI Parser
-    let tasksToCreate = [{ title: extractedText.replace(/^\/inbox\s*/i, '').replace(/^inbox\s*/i, ''), priority: 4, category: isExplicitInbox ? 'inbox' : 'personal', duration: 30, dueDate: isExplicitInbox ? null : todayStr, timeSlot: null, subtasks: [] }]
+    let tasksToCreate = [{ title: extractedText.replace(/^\/inbox\s*/i, '').replace(/^inbox\s*/i, ''), priority: 3, category: isExplicitInbox ? 'inbox' : 'personal', duration: 30, dueDate: isExplicitInbox ? null : todayStr, timeSlot: null, subtasks: [] }]
 
     if (process.env.GEMINI_API_KEY) {
       const apiKey = process.env.GEMINI_API_KEY
@@ -258,9 +273,56 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
 Поточний час за Києвом: ${currentTimeStr}.
 ${isExplicitInbox ? 'РЕЖИМ INBOX: Замовчуванням dueDate = null та timeSlot = null!' : ''}
 
+ПРИКЛАДИ РОЗБОРУ (Few-Shot Examples):
+1. <raw_data_input>терміново здати звіт до 15:00</raw_data_input> -> priority: 1, dueDate: "${todayStr}", timeSlot: "15:00 - 16:00"
+2. <raw_data_input>на завтра зробити тренування</raw_data_input> -> priority: 2, dueDate: "${todayStr}", timeSlot: null
+3. <raw_data_input>колись купити новий пилосос</raw_data_input> -> priority: 4, dueDate: "${todayStr}", timeSlot: null
+
 <raw_data_input>
 ${cleanText}
 </raw_data_input>`
+
+      const responseSchema = isExplicitInbox ? {
+        type: 'OBJECT',
+        properties: {
+          tasks: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                title: { type: 'STRING' },
+                category: { type: 'STRING' },
+                priority: { type: 'INTEGER' },
+                duration: { type: 'INTEGER' },
+                dueDate: { type: 'STRING', nullable: true },
+                timeSlot: { type: 'STRING', nullable: true },
+              },
+              required: ['title', 'priority', 'duration'],
+            },
+          },
+        },
+        required: ['tasks'],
+      } : {
+        type: 'OBJECT',
+        properties: {
+          tasks: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                title: { type: 'STRING' },
+                category: { type: 'STRING' },
+                priority: { type: 'INTEGER' },
+                duration: { type: 'INTEGER' },
+                dueDate: { type: 'STRING', description: 'YYYY-MM-DD date string. Required.' },
+                timeSlot: { type: 'STRING', nullable: true },
+              },
+              required: ['title', 'priority', 'duration', 'dueDate'],
+            },
+          },
+        },
+        required: ['tasks'],
+      }
 
       const geminiRes = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
@@ -274,41 +336,20 @@ ${cleanText}
                 text: `Ти — AI-планувальник для Telegram.
 ПРАВИЛА ДАТИ:
 1. Якщо вказано день тижня ("в суботу", "за сб", "у четвер"), знайди точну найближчу дату YYYY-MM-DD відносно ${currentDayOfWeek} (${todayStr}).
-2. Якщо дата не вказана, дефолт = "${todayStr}".
+2. Якщо дата не вказана і не Inbox — стави дефолт = "${todayStr}".
 3. ${isExplicitInbox ? 'У режимі INBOX dueDate та timeSlot ПОВИННІ бути null!' : ''}
 
 АЛГОРИТМ ПРІОРИТЕТІВ (1-4):
-- P1: Термінові дедлайни, термінова робота, важливі зустрічі.
+- P1: Термінові дедлайни, термінова робота, аварії.
 - P2: Особисті цілі, тренування, навчання.
 - P3: Рутина, покупки, дзвінки.
-- P4: Дрібні думки, нотатки.
-Встановлюй 1, 2, 3 або 4 на основі контексту!`
+- P4: Дрібні думки, нотатки без дати.`
               }],
             },
             generationConfig: {
               temperature: 0.2,
               responseMimeType: 'application/json',
-              responseSchema: {
-                type: 'OBJECT',
-                properties: {
-                  tasks: {
-                    type: 'ARRAY',
-                    items: {
-                      type: 'OBJECT',
-                      properties: {
-                        title: { type: 'STRING' },
-                        category: { type: 'STRING' },
-                        priority: { type: 'INTEGER' },
-                        duration: { type: 'INTEGER' },
-                        dueDate: { type: 'STRING', nullable: true },
-                        timeSlot: { type: 'STRING', nullable: true },
-                      },
-                      required: ['title', 'priority', 'duration'],
-                    },
-                  },
-                },
-                required: ['tasks'],
-              },
+              responseSchema,
             },
           })
         }
@@ -319,7 +360,27 @@ ${cleanText}
         const parsedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text
         if (parsedText) {
           const parsedObj = JSON.parse(parsedText)
-          if (parsedObj.tasks && parsedObj.tasks.length > 0) tasksToCreate = parsedObj.tasks
+          if (parsedObj.tasks && parsedObj.tasks.length > 0) {
+            tasksToCreate = parsedObj.tasks.map((t: any) => {
+              const textLower = (t.title || extractedText).toLowerCase()
+              const isUrgent = textLower.includes('терміново') || textLower.includes('аварія') || textLower.includes('важливо') || textLower.includes('негайно')
+              
+              let priority = isUrgent ? 1 : (t.priority || 3)
+              let dueDate = t.dueDate
+
+              if (isExplicitInbox) {
+                dueDate = null
+              } else if (!dueDate || dueDate === 'null') {
+                dueDate = todayStr // 🛡️ Жорстко ставимо сьогодні, якщо не Inbox!
+              }
+
+              return {
+                ...t,
+                priority,
+                dueDate,
+              }
+            })
+          }
         }
       }
     }
