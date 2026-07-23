@@ -40,25 +40,27 @@ export async function POST(req: Request) {
 Вказівка форс-мажору користувача: "${situation || 'перепланувати всі справи'}"
 
 Наявні активні завдання користувача:
-${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority, timeSlot: t.timeSlot, dueDate: t.dueDate })))}
+${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority, timeSlot: t.timeSlot, dueDate: t.dueDate, category: t.category })))}
 
 Ти — потужний AI-диспечер розкладу. Виконай вимоги користувача у гнучкому режимі:
-1. Якщо вказано вилучити/замінити/скасувати конкретну справу (наприклад "прибери зал", "зроби з зала перерву"), знайди її за подібністю назви й заповни action: "delete".
-2. Якщо вказано замінити справу іншою (наприклад "замість зала постав гуляння"), заповни action: "replace" або "create_new" і створи нову справу з новими параметрами.
-3. Якщо треба посунути, розтягнути, стиснути або перенести справи на пізніше — обчисли нові часові слоти timeSlot у форматі "HH:MM - HH:MM" починаючи від ${currentTimeStr} або від нового часу.
-4. Якщо справ забагато на сьогодні, перенеси частину менш важливих на завтра (${todayStr} + 1 день).`
+1. Зміна пріоритетів: Якщо кажуть "це найважливіше", "оце дуже треба" — встановлюй newPriority: 1 або 2.
+2. Стиснення часу й усунення прогалин: Якщо треба скоротити тривалість справи або видалити кілька справ, перераховуй newTimeSlot для наступних справ послідовно без порожніх прогалин у часі, починаючи від поточного київського часу ${currentTimeStr}.
+3. Підзадачі: Якщо просять додати кроки/підзадачі до наявної справи — вказуй їх у newSubtasksToAdd. Якщо створюєш нові справи — заповнюй subtasks.
+4. Масове видалення та зсув на зараз: Можеш видаляти кілька справ (action: "delete") та зсувати решту активних справ на поточний час.
+5. Трансформація у відпочинок: Якщо сказано "зроби з залу/роботи відпочинок" — змінюй newTitle = "Відпочинок / Перерва", newCategory = "personal".
+6. Стиснення вечора на 30% та перенесення P3/P4 на завтра: Скорочуй вечірні справи на 30% (newDuration = duration * 0.7), а справи пріоритету P3/P4 перенось на завтра (newDueDate = "${todayStr}" + 1 день) відповідно до профілю продуктивності (${energyProfile || 'morning'}).`
 
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
       systemInstruction: {
         parts: [
           {
-            text: `Ти — AI-диспечер. Завжди повертай JSON інструкцію для оновлення завдань.`,
+            text: `Ти — AI-диспечер розкладу. Завжди повертай структуровану JSON інструкцію для оновлення завдань.`,
           },
         ],
       },
       generationConfig: {
-        temperature: 0,
+        temperature: 0.2,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'OBJECT',
@@ -75,6 +77,8 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
                   newTimeSlot: { type: 'STRING' },
                   newDueDate: { type: 'STRING', description: 'YYYY-MM-DD' },
                   newCategory: { type: 'STRING', description: 'inbox, work, personal, fitness, study' },
+                  newPriority: { type: 'INTEGER', description: '1, 2, 3, або 4' },
+                  newSubtasksToAdd: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Масив нових підзадач' },
                 },
                 required: ['id', 'action'],
               },
@@ -89,6 +93,7 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
                   timeSlot: { type: 'STRING' },
                   priority: { type: 'INTEGER' },
                   category: { type: 'STRING' },
+                  subtasks: { type: 'ARRAY', items: { type: 'STRING' } },
                 },
                 required: ['title'],
               },
@@ -133,11 +138,23 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
               const updateData: any = {}
               if (item.newTitle) updateData.title = item.newTitle
               if (item.newDuration) updateData.duration = item.newDuration
+              if (item.newPriority) updateData.priority = item.newPriority
               if (item.newTimeSlot !== undefined) updateData.timeSlot = item.newTimeSlot
               if (item.newCategory) updateData.category = item.newCategory
               if (item.newDueDate) {
                 const [y, m, d] = item.newDueDate.split('-').map(Number)
                 updateData.dueDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+              }
+              if (Array.isArray(item.newSubtasksToAdd) && item.newSubtasksToAdd.length > 0) {
+                updateData.subtasks = {
+                  create: item.newSubtasksToAdd.map((st: string) => ({
+                    userId: user.id,
+                    title: st,
+                    priority: 4,
+                    category: item.newCategory || 'inbox',
+                    duration: 15,
+                  })),
+                }
               }
               await prisma.task.update({
                 where: { id: item.id },
@@ -160,6 +177,15 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
                 priority: nt.priority || 3,
                 category: nt.category || 'inbox',
                 dueDate: targetDate,
+                subtasks: Array.isArray(nt.subtasks) && nt.subtasks.length > 0 ? {
+                  create: nt.subtasks.map((st: string) => ({
+                    userId: user.id,
+                    title: st,
+                    priority: 4,
+                    category: nt.category || 'inbox',
+                    duration: 15,
+                  })),
+                } : undefined,
               },
             })
           }
