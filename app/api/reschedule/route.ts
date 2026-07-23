@@ -130,66 +130,68 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
       if (parsedText) {
         const { tasksToUpdate, newTasksToCreate } = JSON.parse(parsedText)
 
-        if (Array.isArray(tasksToUpdate)) {
-          for (const item of tasksToUpdate) {
-            if (item.action === 'delete') {
-              await prisma.task.delete({ where: { id: item.id } }).catch(() => {})
-            } else if (item.action === 'update' || item.action === 'replace') {
-              const updateData: any = {}
-              if (item.newTitle) updateData.title = item.newTitle
-              if (item.newDuration) updateData.duration = item.newDuration
-              if (item.newPriority) updateData.priority = item.newPriority
-              if (item.newTimeSlot !== undefined) updateData.timeSlot = item.newTimeSlot
-              if (item.newCategory) updateData.category = item.newCategory
-              if (item.newDueDate) {
-                const [y, m, d] = item.newDueDate.split('-').map(Number)
-                updateData.dueDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
-              }
-              if (Array.isArray(item.newSubtasksToAdd) && item.newSubtasksToAdd.length > 0) {
-                updateData.subtasks = {
-                  create: item.newSubtasksToAdd.map((st: string) => ({
-                    userId: user.id,
-                    title: st,
-                    priority: 4,
-                    category: item.newCategory || 'inbox',
-                    duration: 15,
-                  })),
+        await prisma.$transaction(async (tx) => {
+          if (Array.isArray(tasksToUpdate)) {
+            for (const item of tasksToUpdate) {
+              if (item.action === 'delete') {
+                await tx.task.delete({ where: { id: item.id } }).catch(() => {})
+              } else if (item.action === 'update' || item.action === 'replace') {
+                const updateData: any = {}
+                if (item.newTitle) updateData.title = item.newTitle
+                if (item.newDuration) updateData.duration = item.newDuration
+                if (item.newPriority) updateData.priority = item.newPriority
+                if (item.newTimeSlot !== undefined) updateData.timeSlot = item.newTimeSlot
+                if (item.newCategory) updateData.category = item.newCategory
+                if (item.newDueDate) {
+                  const [y, m, d] = item.newDueDate.split('-').map(Number)
+                  updateData.dueDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
                 }
+                if (Array.isArray(item.newSubtasksToAdd) && item.newSubtasksToAdd.length > 0) {
+                  updateData.subtasks = {
+                    create: item.newSubtasksToAdd.map((st: string) => ({
+                      userId: user.id,
+                      title: st,
+                      priority: 4,
+                      category: item.newCategory || 'inbox',
+                      duration: 15,
+                    })),
+                  }
+                }
+                await tx.task.update({
+                  where: { id: item.id },
+                  data: updateData,
+                }).catch(() => {})
               }
-              await prisma.task.update({
-                where: { id: item.id },
-                data: updateData,
-              }).catch(() => {})
             }
           }
-        }
 
-        if (Array.isArray(newTasksToCreate) && newTasksToCreate.length > 0) {
-          const [y, m, d] = todayStr.split('-').map(Number)
-          const targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
-          for (const nt of newTasksToCreate) {
-            await prisma.task.create({
-              data: {
-                userId: user.id,
-                title: nt.title,
-                duration: nt.duration || 30,
-                timeSlot: nt.timeSlot || null,
-                priority: nt.priority || 3,
-                category: nt.category || 'inbox',
-                dueDate: targetDate,
-                subtasks: Array.isArray(nt.subtasks) && nt.subtasks.length > 0 ? {
-                  create: nt.subtasks.map((st: string) => ({
-                    userId: user.id,
-                    title: st,
-                    priority: 4,
-                    category: nt.category || 'inbox',
-                    duration: 15,
-                  })),
-                } : undefined,
-              },
-            })
+          if (Array.isArray(newTasksToCreate) && newTasksToCreate.length > 0) {
+            const [y, m, d] = todayStr.split('-').map(Number)
+            const targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+            for (const nt of newTasksToCreate) {
+              await tx.task.create({
+                data: {
+                  userId: user.id,
+                  title: nt.title,
+                  duration: nt.duration || 30,
+                  timeSlot: nt.timeSlot || null,
+                  priority: nt.priority || 3,
+                  category: nt.category || 'inbox',
+                  dueDate: targetDate,
+                  subtasks: Array.isArray(nt.subtasks) && nt.subtasks.length > 0 ? {
+                    create: nt.subtasks.map((st: string) => ({
+                      userId: user.id,
+                      title: st,
+                      priority: 4,
+                      category: nt.category || 'inbox',
+                      duration: 15,
+                    })),
+                  } : undefined,
+                },
+              })
+            }
           }
-        }
+        })
       }
     }
 

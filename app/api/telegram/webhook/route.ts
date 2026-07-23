@@ -138,6 +138,106 @@ export async function POST(req: Request) {
     }
 
     const todayStr = formatLocalDate()
+    const isExplicitForce = extractedText.toLowerCase().startsWith('/force') || extractedText.toLowerCase().startsWith('force')
+    if (isExplicitForce) {
+      await sendTelegramMessage(botToken, chatId, '🚨 **Прийняв форс-мажор!** Розчищаю розклад та інтегрую термінову справу...')
+      const forceText = extractedText.replace(/^\/force\s*/i, '').replace(/^force\s*/i, '').trim()
+      const activeTasks = await prisma.task.findMany({ where: { userId: user.id, status: 'todo' } })
+      const currentTimeStr = getKyivTimeStr()
+
+      if (process.env.GEMINI_API_KEY) {
+        const apiKey = process.env.GEMINI_API_KEY
+        const prompt = `Сьогодні за Києвом: ${todayStr}, поточний час: ${currentTimeStr}.
+Ти — кризовий AI-диспечер. Стався форс-мажор: "${forceText || 'термінова справа'}"
+
+Активні завдання користувача на сьогодні:
+${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority, timeSlot: t.timeSlot })))}
+
+Вимоги:
+1. Створи нову задачу з найвищим пріоритетом (P1) на сьогодні (${todayStr}).
+2. Якщо не вистачає часу, перенеси менш важливі справи (P3, P4) на завтра (${todayStr} + 1 день) або посунь їх у часі без прогалин.`
+
+        const forceRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              systemInstruction: { parts: [{ text: 'Ти — кризовий AI-диспечер. Повертай JSON для форс-мажору.' }] },
+              generationConfig: {
+                temperature: 0.2,
+                responseMimeType: 'application/json',
+                responseSchema: {
+                  type: 'OBJECT',
+                  properties: {
+                    newTaskTitle: { type: 'STRING' },
+                    newTaskDuration: { type: 'INTEGER' },
+                    newTaskTimeSlot: { type: 'STRING', nullable: true },
+                    rescheduledTasks: {
+                      type: 'ARRAY',
+                      items: {
+                        type: 'OBJECT',
+                        properties: {
+                          taskId: { type: 'STRING' },
+                          newDueDate: { type: 'STRING', nullable: true },
+                          newPriority: { type: 'INTEGER', nullable: true },
+                          newTimeSlot: { type: 'STRING', nullable: true },
+                        },
+                        required: ['taskId'],
+                      },
+                    },
+                  },
+                  required: ['newTaskTitle'],
+                },
+              },
+            }),
+          }
+        )
+
+        if (forceRes.ok) {
+          const forceData = await forceRes.json()
+          const pText = forceData.candidates?.[0]?.content?.parts?.[0]?.text
+          if (pText) {
+            const { newTaskTitle, newTaskDuration, newTaskTimeSlot, rescheduledTasks } = JSON.parse(pText)
+            const [y, m, d] = todayStr.split('-').map(Number)
+            const targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
+
+            await prisma.$transaction(async (tx) => {
+              await tx.task.create({
+                data: {
+                  userId: user.id,
+                  title: (newTaskTitle || forceText).trim(),
+                  priority: 1,
+                  category: 'work',
+                  duration: newTaskDuration || 60,
+                  dueDate: targetDate,
+                  timeSlot: newTaskTimeSlot || null,
+                },
+              })
+
+              if (Array.isArray(rescheduledTasks)) {
+                for (const rt of rescheduledTasks) {
+                  const updateObj: any = {}
+                  if (rt.newPriority) updateObj.priority = rt.newPriority
+                  if (rt.newTimeSlot !== undefined) updateObj.timeSlot = rt.newTimeSlot
+                  if (rt.newDueDate) {
+                    const [ry, rm, rd] = rt.newDueDate.split('-').map(Number)
+                    updateObj.dueDate = new Date(Date.UTC(ry, rm - 1, rd, 12, 0, 0, 0))
+                  }
+                  await tx.task.update({ where: { id: rt.taskId }, data: updateObj }).catch(() => {})
+                }
+              }
+            })
+
+            const summaryMsg = `🔥 **Форс-мажор розчищено!**\n\n📌 **Додано термінову P1 задачу:** ${newTaskTitle || forceText}\n📦 **Переплановано:** ${rescheduledTasks?.length || 0} справ.`
+            await sendTelegramMessage(botToken, chatId, summaryMsg)
+            return NextResponse.json({ ok: true })
+          }
+        }
+      }
+    }
+
     const isExplicitInbox = extractedText.toLowerCase().startsWith('/inbox') || extractedText.toLowerCase().startsWith('inbox')
 
     // Створення завдань через Gemini AI Parser
@@ -230,6 +330,7 @@ ${cleanText}
       body: JSON.stringify({
         commands: [
           { command: 'start', description: '🚀 Авторизуватись у планері' },
+          { command: 'force', description: '🚨 Кризовий форс-мажор (розчистити розклад і вставити P1)' },
           { command: 'inbox', description: '📥 Додати думку в беклог (без дати)' },
           { command: 'status', description: '📊 Стан підписки' },
           { command: 'help', description: 'ℹ️ Довідка та інструкція' },
