@@ -22,7 +22,7 @@ export async function GET(req: Request) {
     const view = searchParams.get('view') || 'today'
     const dateStr = searchParams.get('date')
 
-    let whereClause: any = { userId: user.id }
+    let whereClause: any = { userId: user.id, parentId: null }
 
     if (view === 'inbox') {
       whereClause.category = 'inbox'

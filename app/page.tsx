@@ -911,16 +911,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Inbox tab */}
-        {activeTab === 'inbox' && (
-          <div className="bg-[#161618] border border-[#232326] rounded-2xl p-4 mb-2">
-            <h3 className="text-sm font-bold text-white mb-1 flex items-center gap-2">📥 Inbox — що це?</h3>
-            <p className="text-xs text-[#8E8E93] leading-relaxed">
-              Inbox — це «скринька вхідних думок». Сюди автоматично потрапляють задачі без конкретної дати або категорії.
-              Це твій Quick Capture: надиктував → впало в Inbox → потім розподіляй по датах та категоріях.
-            </p>
-          </div>
-        )}
+
 
         {/* Чернетки */}
         {draftTasks && draftTasks.length > 0 && (
@@ -1086,9 +1077,16 @@ export default function Home() {
                               </span>
                             )}
                             {hasConflict && (
-                              <span className="text-[9px] bg-[#FF5E5E]/20 text-[#FF5E5E] px-1.5 py-0.5 rounded-md font-bold border border-[#FF5E5E]/40" title="Конфлікт часу — дві справи накладаються!">
+                              <button
+                                onClick={() => {
+                                  setRescheduleSituation(`Конфлікт часу у справі "${task.title}". Посунь наступну справу або переплануй!`)
+                                  setShowRescheduleModal(true)
+                                }}
+                                className="text-[9px] bg-[#FF5E5E]/25 hover:bg-[#FF5E5E]/40 text-[#FF5E5E] px-1.5 py-0.5 rounded-md font-bold border border-[#FF5E5E]/50 transition-all active:scale-95 flex items-center gap-1 cursor-pointer"
+                                title="Натисни для вирішення конфлікту"
+                              >
                                 ⚠️ Конфлікт часу
-                              </span>
+                              </button>
                             )}
                             {task.isCarriedOver && (
                               <span className="text-[9px] bg-[#FFAE58]/10 text-[#FFAE58]/80 px-1.5 py-0.5 rounded-md border border-[#FFAE58]/20">перенесено</span>
@@ -1303,8 +1301,8 @@ export default function Home() {
             </h2>
             <div className="flex justify-between items-center mb-2">
               <label className="text-xs text-[#8E8E93]">Що сталося?</label>
-              <button onClick={isRecordingModal ? stopRecordingModal : startRecordingModal} className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 ${isRecordingModal ? 'bg-[#FF5E5E] text-white animate-pulse' : 'bg-[#1C1C1E] text-[#FFAE58] border border-[#FFAE58]/30'}`}>
-                <Mic className="w-3.5 h-3.5" /> {isRecordingModal ? 'Запис...' : 'Надиктувати'}
+              <button onClick={isRecordingModal ? stopRecordingModal : startRecordingModal} className={`p-2.5 rounded-2xl flex items-center justify-center transition-all ${isRecordingModal ? 'bg-[#FF5E5E] text-white animate-pulse shadow-lg shadow-[#FF5E5E]/40' : 'bg-[#1C1C1E] text-[#FFAE58] border border-[#FFAE58]/40 hover:bg-[#232326]'}`} title="Голосовий ввід">
+                <Mic className="w-5 h-5" />
               </button>
             </div>
             <textarea value={rescheduleSituation} onChange={(e) => setRescheduleSituation(e.target.value)}

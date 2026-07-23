@@ -19,8 +19,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'GEMINI_API_KEY не налаштовано' }, { status: 500 })
     }
 
-    // Використовуємо лише високолімітні 500 RPD Lite моделі
-    const activeModel = model || 'gemini-3.1-flash-lite'
+    // Дефолтна модель — Gemini 3.5 Flash Lite
+    const activeModel = model || 'gemini-3.5-flash-lite'
 
     const todayStr = formatLocalDate()
     const currentTimeStr = getKyivTimeStr()
