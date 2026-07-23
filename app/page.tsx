@@ -86,7 +86,7 @@ export default function Home() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
 
-  const [activeTab, setActiveTab] = useState<'today' | 'week' | 'inbox' | 'habits' | 'settings'>('today')
+  const [activeTab, setActiveTab] = useState<'today' | 'week' | 'inbox' | 'settings'>('today')
   const [selectedDate, setSelectedDate] = useState<string>(formatLocalDate())
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
 

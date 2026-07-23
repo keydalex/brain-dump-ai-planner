@@ -1,10 +1,10 @@
 'use client'
 
-import { Calendar, CalendarDays, Inbox, Settings, Sparkles } from 'lucide-react'
+import { Calendar, CalendarDays, Inbox, Settings } from 'lucide-react'
 
 interface BottomNavProps {
-  activeTab: 'today' | 'week' | 'inbox' | 'habits' | 'settings'
-  setActiveTab: (tab: 'today' | 'week' | 'inbox' | 'habits' | 'settings') => void
+  activeTab: 'today' | 'week' | 'inbox' | 'settings'
+  setActiveTab: (tab: 'today' | 'week' | 'inbox' | 'settings') => void
   taskCountToday: number
   taskCountInbox: number
 }
@@ -59,16 +59,6 @@ export default function BottomNav({
           )}
         </div>
         <span className="text-[10px] font-medium">Inbox</span>
-      </button>
-
-      <button
-        onClick={() => setActiveTab('habits')}
-        className={`flex flex-col items-center gap-0.5 transition-all ${
-          activeTab === 'habits' ? 'text-[#FFAE58] scale-105' : 'text-[#8E8E93] hover:text-white'
-        }`}
-      >
-        <Sparkles className="w-5 h-5 text-[#FFAE58]" />
-        <span className="text-[10px] font-medium">Habits</span>
       </button>
 
       <button
