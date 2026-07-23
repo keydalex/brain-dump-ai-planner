@@ -74,6 +74,7 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
                   newDuration: { type: 'INTEGER' },
                   newTimeSlot: { type: 'STRING' },
                   newDueDate: { type: 'STRING', description: 'YYYY-MM-DD' },
+                  newCategory: { type: 'STRING', description: 'inbox, work, personal, fitness, study' },
                 },
                 required: ['id', 'action'],
               },
@@ -133,6 +134,7 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
               if (item.newTitle) updateData.title = item.newTitle
               if (item.newDuration) updateData.duration = item.newDuration
               if (item.newTimeSlot !== undefined) updateData.timeSlot = item.newTimeSlot
+              if (item.newCategory) updateData.category = item.newCategory
               if (item.newDueDate) {
                 const [y, m, d] = item.newDueDate.split('-').map(Number)
                 updateData.dueDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))

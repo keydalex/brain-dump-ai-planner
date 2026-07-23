@@ -42,6 +42,7 @@ interface Task {
   duration: number
   dueDate?: string
   timeSlot?: string
+  createdAt?: string
   isCarriedOver: boolean
   subtasks?: Task[]
 }
@@ -236,13 +237,12 @@ export default function Home() {
   const recordStartTimeRef = useRef<number>(0)
 
   const animateSendAndProcess = useCallback(async (blob: Blob, durationMs: number) => {
-    if (durationMs < 2000) {
+    if (durationMs < 400) {
       showToast('Запис занадто короткий. Спробуй ще раз!', 'info')
       return
     }
     setSendAnimating(true)
-    await new Promise((r) => setTimeout(r, 400))
-    setSendAnimating(false)
+    setTimeout(() => setSendAnimating(false), 200)
     if (!blob || blob.size === 0) {
       showToast('Аудіо порожнє — спробуй ще раз', 'error')
       return
@@ -1060,10 +1060,18 @@ export default function Home() {
                   const doneCount = task.subtasks?.filter((s) => s.status === 'done').length || 0
                   const totalSubs = task.subtasks?.length || 0
 
-                  // Перевірка на конфлікт часу
-                  const hasConflict = !!(
+                  // Перевірка на конфлікт часу (Ігноруємо виконані 'done' та справи старше 24 годин!)
+                  const taskAgeMs = Date.now() - new Date(task.createdAt || Date.now()).getTime()
+                  const isOlderThan24h = taskAgeMs > 24 * 60 * 60 * 1000
+
+                  const hasConflict = !isDone && !isOlderThan24h && !!(
                     task.timeSlot &&
-                    filteredTasks.some((other) => other.id !== task.id && doSlotsOverlap(task.timeSlot, other.timeSlot))
+                    filteredTasks.some(
+                      (other) =>
+                        other.id !== task.id &&
+                        other.status === 'todo' &&
+                        doSlotsOverlap(task.timeSlot, other.timeSlot)
+                    )
                   )
 
                   const prevTask = idx > 0 ? filteredTasks[idx - 1] : null
