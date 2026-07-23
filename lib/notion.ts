@@ -6,7 +6,12 @@ import { prisma } from './prisma'
 export async function createNotionDatabase(parentPageId: string, token?: string) {
   const notionToken = token || process.env.NOTION_API_KEY
   if (!notionToken) {
-    throw new Error('Notion API Key не вказано')
+    throw new Error('Notion API Key не вказано у налаштуваннях')
+  }
+
+  let formattedPageId = parentPageId.trim()
+  if (formattedPageId.length === 32 && !formattedPageId.includes('-')) {
+    formattedPageId = formattedPageId.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5')
   }
 
   const res = await fetch('https://api.notion.com/v1/databases', {
@@ -17,7 +22,7 @@ export async function createNotionDatabase(parentPageId: string, token?: string)
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      parent: { type: 'page_id', page_id: parentPageId },
+      parent: { type: 'page_id', page_id: formattedPageId },
       title: [
         {
           type: 'text',
@@ -70,7 +75,10 @@ export async function createNotionDatabase(parentPageId: string, token?: string)
   if (!res.ok) {
     const errText = await res.text()
     console.error('Failed to create Notion database:', errText)
-    throw new Error('Не вдалося створити базу даних у Notion')
+    if (errText.includes('object_not_found') || errText.includes('Could not find page')) {
+      throw new Error('Notion не бачить цю сторінку. Перевірте, чи ви додали доступ (Connections / Додати зв’язок) для вашої інтеграції в Notion!')
+    }
+    throw new Error('Помилка створення бази у Notion. Перевірте Notion API Key та доступ до сторінки.')
   }
 
   const data = await res.json()
