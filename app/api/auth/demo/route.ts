@@ -17,20 +17,20 @@ export async function POST() {
 
     const today = new Date()
 
-    // 1. Справи на сьогодні (3 стандарні ситуації)
+    // 1. Справи на сьогодні (реальні побутові приклади з підпунктами)
     await prisma.task.create({
       data: {
         userId: user.id,
-        title: 'Робочий зідзвон з командою та обговорення плану',
-        priority: 1,
-        category: 'work',
-        duration: 60,
-        timeSlot: '10:00 - 11:00',
+        title: 'В зал (1.5 години)',
+        priority: 2,
+        category: 'fitness',
+        duration: 90,
+        timeSlot: '15:00 - 16:30',
         dueDate: today,
         subtasks: {
           create: [
-            { userId: user.id, title: 'Підготувати аженду', priority: 3, category: 'work', duration: 15 },
-            { userId: user.id, title: 'Надіслати підсумки зустрічі', priority: 3, category: 'work', duration: 15 },
+            { userId: user.id, title: 'Слухати музику', priority: 3, category: 'fitness', duration: 30 },
+            { userId: user.id, title: 'Переглянути новини', priority: 3, category: 'fitness', duration: 15 },
           ],
         },
       },
@@ -40,41 +40,50 @@ export async function POST() {
       data: [
         {
           userId: user.id,
-          title: 'Силове тренування у залі',
-          priority: 2,
-          category: 'fitness',
-          duration: 60,
-          timeSlot: '15:00 - 16:00',
+          title: 'Робити свій pet-проект (3 години)',
+          priority: 1,
+          category: 'work',
+          duration: 180,
+          timeSlot: '10:00 - 13:00',
           dueDate: today,
         },
         {
           userId: user.id,
-          title: 'Вечірнє читання книги та планування тижня',
+          title: 'Обідати (1 година)',
           priority: 3,
           category: 'personal',
-          duration: 45,
-          timeSlot: '19:00 - 19:45',
+          duration: 60,
+          timeSlot: '13:15 - 14:15',
+          dueDate: today,
+        },
+        {
+          userId: user.id,
+          title: 'Дивитись кіно (2.5 години)',
+          priority: 3,
+          category: 'personal',
+          duration: 150,
+          timeSlot: '19:00 - 21:30',
           dueDate: today,
         },
       ],
     })
 
-    // 2. Справи на 25.07.2026 (5 коротких ситуацій з підпунктами)
+    // 2. Справи на 25.07.2026 (реальні життєві ситуації з підпунктами)
     const targetDate25 = new Date(Date.UTC(2026, 6, 25, 12, 0, 0, 0)) // 25 липня 2026
 
     await prisma.task.create({
       data: {
         userId: user.id,
-        title: 'Аналіз та перевірка звітів за квартал',
+        title: 'Поїхати в гості до дідуся (3.5 години)',
         priority: 1,
-        category: 'work',
-        duration: 45,
-        timeSlot: '09:30 - 10:15',
+        category: 'personal',
+        duration: 210,
+        timeSlot: '10:00 - 13:30',
         dueDate: targetDate25,
         subtasks: {
           create: [
-            { userId: user.id, title: 'Звірити фінансові показники', priority: 3, category: 'work', duration: 15 },
-            { userId: user.id, title: 'Затвердити з керівництвом', priority: 3, category: 'work', duration: 15 },
+            { userId: user.id, title: 'Купити гостинці в магазині', priority: 3, category: 'personal', duration: 20 },
+            { userId: user.id, title: 'Допомогти по господарству', priority: 3, category: 'personal', duration: 40 },
           ],
         },
       },
@@ -84,38 +93,20 @@ export async function POST() {
       data: [
         {
           userId: user.id,
-          title: 'Перегляд матеріалів курсу з Next.js та AI',
+          title: 'Гуляти з друзями (5 годин)',
           priority: 2,
+          category: 'personal',
+          duration: 300,
+          timeSlot: '14:30 - 19:30',
+          dueDate: targetDate25,
+        },
+        {
+          userId: user.id,
+          title: 'Читати книгу (1.5 години)',
+          priority: 3,
           category: 'study',
-          duration: 30,
-          timeSlot: '11:00 - 11:30',
-          dueDate: targetDate25,
-        },
-        {
-          userId: user.id,
-          title: 'Оплата комунальних послуг та рахунків',
-          priority: 2,
-          category: 'personal',
-          duration: 15,
-          timeSlot: '13:00 - 13:15',
-          dueDate: targetDate25,
-        },
-        {
-          userId: user.id,
-          title: 'Закупка продуктів у супермаркеті на вихідні',
-          priority: 3,
-          category: 'personal',
-          duration: 25,
-          timeSlot: '16:00 - 16:25',
-          dueDate: targetDate25,
-        },
-        {
-          userId: user.id,
-          title: 'Вечірня прогулянка та розтяжка',
-          priority: 3,
-          category: 'fitness',
-          duration: 30,
-          timeSlot: '18:30 - 19:00',
+          duration: 90,
+          timeSlot: '20:00 - 21:30',
           dueDate: targetDate25,
         },
       ],
