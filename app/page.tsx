@@ -503,9 +503,22 @@ export default function Home() {
     setIsProcessing(true)
     setProcessStatus('Зберігаємо...')
     try {
+      const isInboxTab = activeTab === 'inbox'
+      const finalTasks = draftTasks.map((t) => {
+        if (isInboxTab || t.category === 'inbox') {
+          return {
+            ...t,
+            category: 'inbox',
+            dueDate: null,
+            timeSlot: null,
+          }
+        }
+        return t
+      })
+
       const res = await fetch('/api/tasks', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tasks: draftTasks }),
+        body: JSON.stringify({ tasks: finalTasks }),
       })
       const data = await res.json()
       if (data.success) {
@@ -932,7 +945,7 @@ export default function Home() {
               <span className="text-xs font-extrabold text-[#FFAE58] uppercase tracking-wider">
                 🤖 AI пропонує {draftTasks.length} справ{draftTasks.length > 1 ? 'и' : 'у'}:
               </span>
-              <button onClick={() => setDraftTasks(null)} className="text-[10px] text-[#636366] hover:text-white"><X className="w-4 h-4" /></button>
+              <button onClick={() => { setDraftTasks(null); setInputText('') }} className="text-[10px] text-[#636366] hover:text-white"><X className="w-4 h-4" /></button>
             </div>
 
             <div className="flex flex-col gap-2.5">
@@ -987,7 +1000,7 @@ export default function Home() {
               <button onClick={handleConfirmDrafts} disabled={isProcessing} className="flex-1 py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white text-sm font-bold rounded-xl active:scale-95 disabled:opacity-50">
                 ✅ Підтвердити всі
               </button>
-              <button onClick={() => setDraftTasks(null)} className="px-4 py-3 bg-[#232326] text-[#8E8E93] text-xs font-bold rounded-xl active:scale-95">
+              <button onClick={() => { setDraftTasks(null); setInputText('') }} className="px-4 py-3 bg-[#232326] text-[#8E8E93] text-xs font-bold rounded-xl active:scale-95">
                 Скасувати
               </button>
             </div>

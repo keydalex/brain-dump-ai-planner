@@ -72,9 +72,9 @@ export async function POST(req: Request) {
     if (body.tasks && Array.isArray(body.tasks)) {
       const createdTasks = []
       for (const t of body.tasks) {
-        const isInbox = (t.category === 'inbox' || !t.dueDate) && t.category === 'inbox'
+        const isInbox = t.category === 'inbox' || !t.dueDate
         let targetDate: Date | null = null
-        if (t.dueDate) {
+        if (!isInbox && t.dueDate) {
           if (typeof t.dueDate === 'string' && t.dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
             const [y, m, d] = t.dueDate.split('-').map(Number)
             targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
