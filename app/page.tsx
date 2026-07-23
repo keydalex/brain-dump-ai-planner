@@ -233,7 +233,13 @@ export default function Home() {
     }
   }
 
-  const animateSendAndProcess = useCallback(async (blob: Blob) => {
+  const recordStartTimeRef = useRef<number>(0)
+
+  const animateSendAndProcess = useCallback(async (blob: Blob, durationMs: number) => {
+    if (durationMs < 2000) {
+      showToast('Запис занадто короткий (< 2 сек). Спробуй ще раз', 'info')
+      return
+    }
     setSendAnimating(true)
     await new Promise((r) => setTimeout(r, 400))
     setSendAnimating(false)
@@ -281,6 +287,7 @@ export default function Home() {
       }
       mediaRecorderRef.current = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       audioChunksRef.current = []
+      recordStartTimeRef.current = Date.now()
 
       mediaRecorderRef.current.ondataavailable = (e) => {
         if (e.data.size > 0) {
@@ -293,8 +300,9 @@ export default function Home() {
       mediaRecorderRef.current.onstop = async () => {
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current)
         stream.getTracks().forEach((t) => t.stop())
+        const durationMs = Date.now() - recordStartTimeRef.current
         const blob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current?.mimeType || 'audio/webm' })
-        animateSendAndProcess(blob)
+        animateSendAndProcess(blob, durationMs)
       }
 
       mediaRecorderRef.current.start(100)
@@ -1068,13 +1076,36 @@ export default function Home() {
                           {/* Час + Конфлікт */}
                           <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                             {task.timeSlot && (
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold tracking-wide ${
-                                hasConflict
-                                  ? 'bg-[#FF5E5E]/20 text-[#FF5E5E] border border-[#FF5E5E]/40 animate-pulse'
-                                  : 'bg-[#FFAE58]/15 text-[#FFAE58]'
-                              }`}>
-                                {task.timeSlot}
-                              </span>
+                              <input
+                                type="text"
+                                defaultValue={task.timeSlot}
+                                onBlur={async (e) => {
+                                  const val = e.target.value.trim()
+                                  if (!val || val === task.timeSlot) return
+                                  try {
+                                    const [s, en] = val.split('-').map((t) => t.trim())
+                                    const [sh, sm] = s.split(':').map(Number)
+                                    const [eh, em] = en.split(':').map(Number)
+                                    const calcDur = (eh * 60 + em) - (sh * 60 + sm)
+                                    const finalDur = calcDur > 0 ? calcDur : task.duration
+                                    setTasks(tasks.map((t) => (t.id === task.id ? { ...t, timeSlot: val, duration: finalDur } : t)))
+                                    await fetch('/api/tasks', {
+                                      method: 'PATCH',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ id: task.id, timeSlot: val, duration: finalDur }),
+                                    })
+                                    showToast(`⏱️ Оновлено: ${val} (${finalDur} хв)`, 'success')
+                                  } catch {
+                                    showToast('Формат часу: 14:00 - 15:30', 'error')
+                                  }
+                                }}
+                                className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold tracking-wide border focus:outline-none w-28 bg-[#1C1C1E] ${
+                                  hasConflict
+                                    ? 'bg-[#FF5E5E]/20 text-[#FF5E5E] border-[#FF5E5E]/40 animate-pulse'
+                                    : 'text-[#FFAE58] border-[#232326] focus:border-[#FFAE58]'
+                                }`}
+                                title="Редагувати час (напр: 14:00 - 15:30)"
+                              />
                             )}
                             {hasConflict && (
                               <button
@@ -1168,14 +1199,29 @@ export default function Home() {
                           <Plus className="w-3 h-3" /> Підзадача
                         </button>
 
-                        <a
-                          href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(task.title)}&details=${encodeURIComponent('Brain Dump AI Planner')}&dates=${task.dueDate ? task.dueDate.replace(/-/g, '') : ''}/${task.dueDate ? task.dueDate.replace(/-/g, '') : ''}`}
-                          target="_blank" rel="noreferrer"
-                          className="p-1.5 text-[#636366] hover:text-[#5EA5FF] transition-colors rounded-lg hover:bg-[#1C1C1E]"
-                          title="Додати в Google Календар"
-                        >
-                          <CalendarIcon className="w-3.5 h-3.5" />
-                        </a>
+                        {(() => {
+                          const dateClean = (task.dueDate || formatLocalDate()).replace(/-/g, '')
+                          let startISO = `${dateClean}T090000Z`
+                          let endISO = `${dateClean}T100000Z`
+                          if (task.timeSlot) {
+                            const [startT, endT] = task.timeSlot.split('-').map((s) => s.trim().replace(':', ''))
+                            if (startT && endT) {
+                              startISO = `${dateClean}T${startT}00`
+                              endISO = `${dateClean}T${endT}00`
+                            }
+                          }
+                          const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(task.title)}&details=${encodeURIComponent('Сплановано у Brain Dump AI Planner')}&dates=${startISO}/${endISO}&add=${encodeURIComponent(user?.email || '')}`
+                          return (
+                            <a
+                              href={gcalUrl}
+                              target="_blank" rel="noreferrer"
+                              className="p-1.5 text-[#636366] hover:text-[#5EA5FF] transition-colors rounded-lg hover:bg-[#1C1C1E]"
+                              title="Додати в Google Календар зі сповіщенням"
+                            >
+                              <CalendarIcon className="w-3.5 h-3.5" />
+                            </a>
+                          )
+                        })()}
 
                         {/* Видалити — ТІЛЬКИ в Edit Mode */}
                         {isEditMode && (
