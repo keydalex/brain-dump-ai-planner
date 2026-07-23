@@ -15,37 +15,108 @@ export async function POST() {
       },
     })
 
-    // Створюємо унікальні інструкційні onboarding-задачі на сьогодні
     const today = new Date()
+
+    // 1. Справи на сьогодні (3 стандарні ситуації)
+    await prisma.task.create({
+      data: {
+        userId: user.id,
+        title: 'Робочий зідзвон з командою та обговорення плану',
+        priority: 1,
+        category: 'work',
+        duration: 60,
+        timeSlot: '10:00 - 11:00',
+        dueDate: today,
+        subtasks: {
+          create: [
+            { userId: user.id, title: 'Підготувати аженду', priority: 3, category: 'work', duration: 15 },
+            { userId: user.id, title: 'Надіслати підсумки зустрічі', priority: 3, category: 'work', duration: 15 },
+          ],
+        },
+      },
+    })
 
     await prisma.task.createMany({
       data: [
         {
           userId: user.id,
-          title: '🎙️ Надиктувати голосом: "Сьогодні о 18:00 тренування на півтори години"',
-          priority: 1,
-          category: 'fitness',
-          duration: 90,
-          timeSlot: '18:00 - 19:30',
-          dueDate: today,
-        },
-        {
-          userId: user.id,
-          title: '🔌 Натиснути (🔌) вгорі для синхронізації з Notion',
+          title: 'Силове тренування у залі',
           priority: 2,
-          category: 'work',
-          duration: 10,
-          timeSlot: '10:00 - 10:10',
+          category: 'fitness',
+          duration: 60,
+          timeSlot: '15:00 - 16:00',
           dueDate: today,
         },
         {
           userId: user.id,
-          title: '⚡ Протестувати кнопку Форс-Мажор (голосом або текстом)',
+          title: 'Вечірнє читання книги та планування тижня',
           priority: 3,
           category: 'personal',
-          duration: 15,
-          timeSlot: '12:00 - 12:15',
+          duration: 45,
+          timeSlot: '19:00 - 19:45',
           dueDate: today,
+        },
+      ],
+    })
+
+    // 2. Справи на 25.07.2026 (5 коротких ситуацій з підпунктами)
+    const targetDate25 = new Date(Date.UTC(2026, 6, 25, 12, 0, 0, 0)) // 25 липня 2026
+
+    await prisma.task.create({
+      data: {
+        userId: user.id,
+        title: 'Аналіз та перевірка звітів за квартал',
+        priority: 1,
+        category: 'work',
+        duration: 45,
+        timeSlot: '09:30 - 10:15',
+        dueDate: targetDate25,
+        subtasks: {
+          create: [
+            { userId: user.id, title: 'Звірити фінансові показники', priority: 3, category: 'work', duration: 15 },
+            { userId: user.id, title: 'Затвердити з керівництвом', priority: 3, category: 'work', duration: 15 },
+          ],
+        },
+      },
+    })
+
+    await prisma.task.createMany({
+      data: [
+        {
+          userId: user.id,
+          title: 'Перегляд матеріалів курсу з Next.js та AI',
+          priority: 2,
+          category: 'study',
+          duration: 30,
+          timeSlot: '11:00 - 11:30',
+          dueDate: targetDate25,
+        },
+        {
+          userId: user.id,
+          title: 'Оплата комунальних послуг та рахунків',
+          priority: 2,
+          category: 'personal',
+          duration: 15,
+          timeSlot: '13:00 - 13:15',
+          dueDate: targetDate25,
+        },
+        {
+          userId: user.id,
+          title: 'Закупка продуктів у супермаркеті на вихідні',
+          priority: 3,
+          category: 'personal',
+          duration: 25,
+          timeSlot: '16:00 - 16:25',
+          dueDate: targetDate25,
+        },
+        {
+          userId: user.id,
+          title: 'Вечірня прогулянка та розтяжка',
+          priority: 3,
+          category: 'fitness',
+          duration: 30,
+          timeSlot: '18:30 - 19:00',
+          dueDate: targetDate25,
         },
       ],
     })
