@@ -1226,7 +1226,8 @@ export default function Home() {
                         </button>
 
                         {(() => {
-                          const dateClean = (task.dueDate || formatLocalDate()).replace(/-/g, '')
+                          const rawDate = typeof task.dueDate === 'string' ? task.dueDate.split('T')[0] : (task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : formatLocalDate())
+                          const dateClean = rawDate.replace(/-/g, '')
                           let startISO = `${dateClean}T090000Z`
                           let endISO = `${dateClean}T100000Z`
                           if (task.timeSlot) {

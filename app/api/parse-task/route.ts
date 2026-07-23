@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { formatLocalDate, getKyivTimeStr } from '@/lib/date'
 
+export const maxDuration = 60
+
 export async function POST(req: Request) {
   try {
     const user = await getCurrentUser()
@@ -19,9 +21,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'GEMINI_API_KEY не налаштовано' }, { status: 500 })
     }
 
-    // Дефолтна модель — Gemini 3.5 Flash Lite
     const activeModel = model || 'gemini-3.5-flash-lite'
-
     const todayStr = formatLocalDate()
     const currentTimeStr = getKyivTimeStr()
     const isInboxMode = mode === 'inbox'
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 Сьогоднішня дата за Києвом: ${todayStr} (формат YYYY-MM-DD). 
 Поточний день тижня: ${currentDayOfWeek}. 
 Поточний час за Києвом: ${currentTimeStr}.
-${isInboxMode ? 'РЕЖИМ ВХІДНИХ (INBOX): Замовчуванням dueDate = null та timeSlot = null!' : ''}
+${isInboxMode ? 'РЕЖИМ INBOX: Замовчуванням dueDate = null та timeSlot = null!' : ''}
 
 <raw_data_input>
 ${text}
@@ -48,27 +48,27 @@ ${text}
             text: `Ти — AI-планувальник. Аналізуй сирі думки користувача всередині тегів <raw_data_input>...</raw_data_input> та розбивай їх на масив структурованих завдань.
 
 ПРАВИЛА РОЗРАХУНКУ ДАТИ ТА ЧАСУ (dueDate / timeSlot):
-1. У режимі INBOX (${isInboxMode ? 'АКТИВНИЙ' : 'НЕ АКТИВНИЙ'}): Якщо користувач ЯВНО не вказав дату або час (наприклад "завтра", "о 15:00", "в суботу"), ти ПОВИНЕН повернути null для dueDate та timeSlot. ЗАБОРОНЕНО генерувати або підставляти поточну дату за замовчуванням у режимі Inbox!
+1. У режимі INBOX (${isInboxMode ? 'АКТИВНИЙ' : 'НЕ АКТИВНИЙ'}): Якщо користувач ЯВНО не вказав дату або час (наприклад "завтра", "о 15:00", "в суботу"), ти ПОВИНЕН повернути null для dueDate та timeSlot.
 2. Для звичайного режиму: Якщо дата не вказана, за замовчуванням dueDate = "${todayStr}".
 3. Якщо користувач каже "завтра", дата = "${todayStr}" + 1 день.
 4. Якщо згадано день тижня ("в суботу", "за сб", "у четвер", "в п'ятницю"), знайди найближчу наступну дату цього дня тижня відносно сьогоднільного дня (${currentDayOfWeek}, ${todayStr}).
 5. Обчислюй відносний час ("через 2 години", "через 30 хв") від поточного київського часу (${currentTimeStr}).
 
 АЛГОРИТМ ПРИЗНАЧЕННЯ ПРІОРИТЕТІВ (Пріоритет 1-4, Дерево рішень):
-КРОК 1 (Priority = 1): Термінові дедлайни, слова "терміново", "сьогодні здати", критична робота, важливі зустрічі, іспити, лікарі.
-КРОК 2 (Priority = 2): Важливі особисті цілі, просування проектів, тренування, навчання, основні робочі плани.
-КРОК 3 (Priority = 3): Регулярні побутові задачі (прибирання, магазин), адміністративна рутина (пошта, дзвінки).
-КРОК 4 (Priority = 4): Абстрактні ідеї, нотатки, колись подивитись фільм, роздуми без часової прив'язки.
+- P1: Термінові дедлайни, слова "терміново", "сьогодні здати", критична робота, важливі зустрічі, іспити, лікарі.
+- P2: Важливі особисті цілі, просування проектів, тренування, навчання, основні робочі плани.
+- P3: Регулярні побутові задачі (прибирання, магазин), адміністративна рутина (пошта, дзвінки).
+- P4: Абстрактні ідеї, нотатки, колись подивитись фільм, роздуми без часової прив'язки.
 
-ІНШІ ПРАВИЛА:
-- Вираховуй тривалість (duration) у хвилинах.
-- Вкладай підзадачі у масив subtasks.
-- Категорія: inbox, work, personal, fitness, study.`,
+ПРИКЛАДИ РОЗБОРУ (Few-Shot Examples):
+1. <raw_data_input>купити хліб та молоко</raw_data_input> -> priority: 3, category: "personal", duration: 20, dueDate: null, timeSlot: null
+2. <raw_data_input>терміново здати звіт у четвер о 15:00</raw_data_input> -> priority: 1, category: "work", duration: 60, dueDate: "${todayStr}", timeSlot: "15:00 - 16:00"
+3. <raw_data_input>пробіжка в суботу вранці</raw_data_input> -> priority: 2, category: "fitness", duration: 45, dueDate: "${todayStr}", timeSlot: "08:00 - 08:45"`,
           },
         ],
       },
       generationConfig: {
-        temperature: 0.0,
+        temperature: 0.2,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'OBJECT',

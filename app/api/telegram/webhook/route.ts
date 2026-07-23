@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { syncTaskToNotion } from '@/lib/notion'
 import { formatLocalDate, getKyivNow, getKyivTimeStr } from '@/lib/date'
 
+export const maxDuration = 60
+
 export async function POST(req: Request) {
   try {
     const botToken = process.env.TELEGRAM_BOT_TOKEN
@@ -183,7 +185,7 @@ ${cleanText}
               }],
             },
             generationConfig: {
-              temperature: 0.0,
+              temperature: 0.2,
               responseMimeType: 'application/json',
               responseSchema: {
                 type: 'OBJECT',
