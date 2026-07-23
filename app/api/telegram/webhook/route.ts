@@ -154,7 +154,7 @@ export async function POST(req: Request) {
 ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t.duration, priority: t.priority, timeSlot: t.timeSlot })))}
 
 Вимоги:
-1. Створи нову задачу з найвищим пріоритетом (P1) на сьогодні (${todayStr}).
+1. Створи нову задачу з пріоритетом P1 (найвищий, за замовчуванням) або P2 (якщо вказано меншу терміновість) на сьогодні (${todayStr}).
 2. Якщо не вистачає часу, перенеси менш важливі справи (P3, P4) на завтра (${todayStr} + 1 день) або посунь їх у часі без прогалин.`
 
         const forceRes = await fetch(
@@ -172,6 +172,7 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
                   type: 'OBJECT',
                   properties: {
                     newTaskTitle: { type: 'STRING' },
+                    newTaskPriority: { type: 'INTEGER', description: '1 або 2' },
                     newTaskDuration: { type: 'INTEGER' },
                     newTaskTimeSlot: { type: 'STRING', nullable: true },
                     rescheduledTasks: {
@@ -199,7 +200,7 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
           const forceData = await forceRes.json()
           const pText = forceData.candidates?.[0]?.content?.parts?.[0]?.text
           if (pText) {
-            const { newTaskTitle, newTaskDuration, newTaskTimeSlot, rescheduledTasks } = JSON.parse(pText)
+            const { newTaskTitle, newTaskPriority, newTaskDuration, newTaskTimeSlot, rescheduledTasks } = JSON.parse(pText)
             const [y, m, d] = todayStr.split('-').map(Number)
             const targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
 
@@ -208,7 +209,7 @@ ${JSON.stringify(activeTasks.map((t) => ({ id: t.id, title: t.title, duration: t
                 data: {
                   userId: user.id,
                   title: (newTaskTitle || forceText).trim(),
-                  priority: 1,
+                  priority: newTaskPriority === 2 ? 2 : 1,
                   category: 'work',
                   duration: newTaskDuration || 60,
                   dueDate: targetDate,
