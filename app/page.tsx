@@ -560,16 +560,17 @@ export default function Home() {
       }
 
       const cat = selectedCategory !== 'all' ? selectedCategory : quickAddCategory || 'inbox'
+      const isInboxTask = activeTab === 'inbox' || cat === 'inbox'
       const res = await fetch('/api/tasks', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tasks: [{
             title: quickAddTitle.trim(),
             priority: quickAddPriority,
-            category: cat,
+            category: isInboxTask ? 'inbox' : cat,
             duration: Number(quickAddDuration) || 30,
-            dueDate: selectedDate || formatLocalDate(),
-            timeSlot: finalSlot,
+            dueDate: isInboxTask ? null : (selectedDate || formatLocalDate()),
+            timeSlot: isInboxTask ? null : finalSlot,
           }]
         }),
       })
@@ -747,6 +748,12 @@ export default function Home() {
         {/* Поле вводу */}
         {activeTab !== 'settings' && (
           <div id="input-area" className="bg-[#161618] border border-[#232326] rounded-2xl p-3 shadow-lg">
+            {/* Слоган відповідно до режиму */}
+            <p className="text-[#8E8E93] text-xs font-medium mb-2">
+              {activeTab === 'inbox'
+                ? 'Вивали все, що в голові (без дедлайнів) 🧠'
+                : 'Скажи задачу і AI розкладе її по часу 🪄'}
+            </p>
             <div className="flex items-start gap-2.5">
               {/* Велика мобільна кнопка мікрофона */}
               <button
@@ -769,7 +776,7 @@ export default function Home() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText() }
                   }}
-                  placeholder={isRecording ? '🔴 Запис іде...' : (activeTab === 'inbox' ? 'Нова думка в Inbox...' : 'Що в голові? Надиктуй або напиши...')}
+                  placeholder={isRecording ? '🔴 Запис іде...' : (activeTab === 'inbox' ? 'Вивали все, що в голові (без дедлайнів) 🧠' : 'Що в голові? Надиктуй або напиши...')}
                   disabled={isProcessing || isRecording}
                   rows={2}
                   className="w-full bg-transparent text-white text-sm rounded-xl focus:outline-none min-h-[52px] max-h-[100px] resize-none placeholder:text-[#636366]"
@@ -1318,16 +1325,18 @@ export default function Home() {
                   placeholder="Назва задачі..."
                   className="w-full bg-transparent text-white text-sm focus:outline-none"
                 />
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[9px] text-[#8E8E93]">Початок:</span>
-                    <input type="time" value={quickAddStartTime} onChange={(e) => setQuickAddStartTime(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
+                {activeTab !== 'inbox' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-[#8E8E93]">Початок:</span>
+                      <input type="time" value={quickAddStartTime} onChange={(e) => setQuickAddStartTime(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-[#8E8E93]">Кінець (або тривалість):</span>
+                      <input type="time" value={quickAddEndTime} onChange={(e) => setQuickAddEndTime(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[9px] text-[#8E8E93]">Кінець (або тривалість):</span>
-                    <input type="time" value={quickAddEndTime} onChange={(e) => setQuickAddEndTime(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
-                  </div>
-                </div>
+                )}
                 <div className="flex items-center gap-2">
                   <select value={quickAddPriority} onChange={(e) => setQuickAddPriority(Number(e.target.value))} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none">
                     <option value={1}>🔴 P1</option>
