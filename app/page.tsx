@@ -944,10 +944,16 @@ export default function Home() {
                       onChange={(e) => { const u = [...draftTasks]; u[idx].title = e.target.value; setDraftTasks(u) }}
                       className="w-full bg-transparent text-white text-sm font-medium focus:outline-none mb-2"
                     />
-                    <div className="grid grid-cols-2 gap-2 mb-2">
-                      <input type="text" value={t.timeSlot || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].timeSlot = e.target.value; setDraftTasks(u) }} placeholder="⏰ 14:00 - 15:00" className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none" />
-                      <input type="date" value={t.dueDate || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].dueDate = e.target.value; setDraftTasks(u) }} className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none" />
-                    </div>
+                    {activeTab !== 'inbox' && t.category !== 'inbox' ? (
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <input type="text" value={t.timeSlot || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].timeSlot = e.target.value; setDraftTasks(u) }} placeholder="⏰ Час (напр. 14:00-15:00)" className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none" />
+                        <input type="date" value={t.dueDate || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].dueDate = e.target.value; setDraftTasks(u) }} className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none" />
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-[#A78BFA] bg-[#1C1C1E] px-2.5 py-1 rounded-lg border border-[#232326] mb-2 font-medium">
+                        📥 Збережеться в Inbox без дати й часу
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <select value={t.priority} onChange={(e) => { const u = [...draftTasks]; u[idx].priority = Number(e.target.value); setDraftTasks(u) }} className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none">
                         <option value={1}>🔴 P1 — Терміново</option>
@@ -1312,20 +1318,20 @@ export default function Home() {
               )}
             </div>
 
-            {/* Швидке додавання вручну */}
-            {!showQuickAdd ? (
-              <button onClick={() => setShowQuickAdd(true)} className="w-full py-3 border-2 border-dashed border-[#232326] hover:border-[#FF5E5E]/50 text-[#636366] hover:text-[#FF5E5E] rounded-2xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-98 mt-1">
-                <Plus className="w-4 h-4" /> Швидко додати задачу
-              </button>
-            ) : (
-              <div className="bg-[#161618] border border-[#FF5E5E]/40 rounded-2xl p-3 flex flex-col gap-2 mt-1">
-                <input autoFocus type="text" value={quickAddTitle}
-                  onChange={(e) => setQuickAddTitle(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleQuickAdd(); if (e.key === 'Escape') { setShowQuickAdd(false); setQuickAddTitle('') } }}
-                  placeholder="Назва задачі..."
-                  className="w-full bg-transparent text-white text-sm focus:outline-none"
-                />
-                {activeTab !== 'inbox' && (
+            {/* Швидке додавання вручну (тільки для Planner) */}
+            {activeTab !== 'inbox' && (
+              !showQuickAdd ? (
+                <button onClick={() => setShowQuickAdd(true)} className="w-full py-3 border-2 border-dashed border-[#232326] hover:border-[#FF5E5E]/50 text-[#636366] hover:text-[#FF5E5E] rounded-2xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-98 mt-1">
+                  <Plus className="w-4 h-4" /> Швидко додати задачу
+                </button>
+              ) : (
+                <div className="bg-[#161618] border border-[#FF5E5E]/40 rounded-2xl p-3 flex flex-col gap-2 mt-1">
+                  <input autoFocus type="text" value={quickAddTitle}
+                    onChange={(e) => setQuickAddTitle(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleQuickAdd(); if (e.key === 'Escape') { setShowQuickAdd(false); setQuickAddTitle('') } }}
+                    placeholder="Назва задачі..."
+                    className="w-full bg-transparent text-white text-sm focus:outline-none"
+                  />
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex flex-col gap-1">
                       <span className="text-[9px] text-[#8E8E93]">Початок:</span>
@@ -1336,29 +1342,29 @@ export default function Home() {
                       <input type="time" value={quickAddEndTime} onChange={(e) => setQuickAddEndTime(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
                     </div>
                   </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <select value={quickAddPriority} onChange={(e) => setQuickAddPriority(Number(e.target.value))} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none">
-                    <option value={1}>🔴 P1</option>
-                    <option value={2}>🟠 P2</option>
-                    <option value={3}>🔵 P3</option>
-                    <option value={4}>⚪ P4</option>
-                  </select>
-                  <select value={selectedCategory !== 'all' ? selectedCategory : quickAddCategory} onChange={(e) => setQuickAddCategory(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none capitalize">
-                    <option value="inbox">📥 Inbox</option>
-                    <option value="work">💻 Work</option>
-                    <option value="personal">👤 Personal</option>
-                    <option value="fitness">🏋️ Fitness</option>
-                    <option value="study">📚 Study</option>
-                  </select>
-                  <input type="number" value={quickAddDuration} onChange={(e) => setQuickAddDuration(Number(e.target.value) || 30)} placeholder="хв" min={5} className="w-16 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
-                  <div className="flex-1" />
-                  <button onClick={handleQuickAdd} disabled={!quickAddTitle.trim() || isQuickAdding} className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-bold rounded-xl active:scale-95 disabled:opacity-40">
-                    {isQuickAdding ? '...' : 'Додати'}
-                  </button>
-                  <button onClick={() => { setShowQuickAdd(false); setQuickAddTitle('') }} className="p-1.5 text-[#636366] hover:text-white"><X className="w-4 h-4" /></button>
+                  <div className="flex items-center gap-2">
+                    <select value={quickAddPriority} onChange={(e) => setQuickAddPriority(Number(e.target.value))} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none">
+                      <option value={1}>🔴 P1</option>
+                      <option value={2}>🟠 P2</option>
+                      <option value={3}>🔵 P3</option>
+                      <option value={4}>⚪ P4</option>
+                    </select>
+                    <select value={selectedCategory !== 'all' ? selectedCategory : quickAddCategory} onChange={(e) => setQuickAddCategory(e.target.value)} className="bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none capitalize">
+                      <option value="inbox">📥 Inbox</option>
+                      <option value="work">💻 Work</option>
+                      <option value="personal">👤 Personal</option>
+                      <option value="fitness">🏋️ Fitness</option>
+                      <option value="study">📚 Study</option>
+                    </select>
+                    <input type="number" value={quickAddDuration} onChange={(e) => setQuickAddDuration(Number(e.target.value) || 30)} placeholder="хв" min={5} className="w-16 bg-[#1C1C1E] border border-[#232326] text-white text-xs rounded-xl px-2 py-1.5 focus:outline-none" />
+                    <div className="flex-1" />
+                    <button onClick={handleQuickAdd} disabled={!quickAddTitle.trim() || isQuickAdding} className="px-3 py-1.5 bg-[#FF5E5E] text-white text-xs font-bold rounded-xl active:scale-95 disabled:opacity-40">
+                      {isQuickAdding ? '...' : 'Додати'}
+                    </button>
+                    <button onClick={() => { setShowQuickAdd(false); setQuickAddTitle('') }} className="p-1.5 text-[#636366] hover:text-white"><X className="w-4 h-4" /></button>
+                  </div>
                 </div>
-              </div>
+              )
             )}
           </>
         )}
