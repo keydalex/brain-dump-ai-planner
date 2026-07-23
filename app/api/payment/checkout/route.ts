@@ -10,10 +10,10 @@ export async function POST() {
     }
 
     const monoToken = process.env.MONOBANK_API_KEY
-    const monoJarUrl = process.env.MONO_JAR_URL
+    const monoJarUrl = process.env.MONO_JAR_URL || 'https://send.monobank.ua/jar/4jMH4MD6V4'
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://brain-dump-ai-planner.vercel.app'
 
-    // 1. Якщо налаштовано посилання на Монобанку в .env (MONO_JAR_URL)
+    // 1. Посилання на Монобанку
     if (monoJarUrl) {
       const jarUrlWithComment = `${monoJarUrl}?t=${encodeURIComponent(`Користувач: ${user.email}`)}`
       return NextResponse.json({ jarUrl: jarUrlWithComment })
