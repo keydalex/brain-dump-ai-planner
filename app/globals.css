@@ -29,14 +29,19 @@ body {
 .mobile-app-container {
   width: 100%;
   max-width: 480px;
-  min-height: 100vh;
+  min-height: 100dvh;
   background-color: var(--background);
   border-left: 1px solid var(--card-border);
   border-right: 1px solid var(--card-border);
   display: flex;
   flex-direction: column;
   position: relative;
+  overflow-x: hidden;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+button {
+  touch-action: manipulation;
 }
 
 /* Приховування стандартного скроллбару для тижневого слайдера */

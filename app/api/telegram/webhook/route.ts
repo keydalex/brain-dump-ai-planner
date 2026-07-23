@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { syncTaskToNotion } from '@/lib/notion'
-import { formatLocalDate, getKyivNow } from '@/lib/date'
+import { formatLocalDate, getKyivNow, getKyivTimeStr } from '@/lib/date'
 
 export async function POST(req: Request) {
   try {
@@ -141,7 +141,23 @@ export async function POST(req: Request) {
     if (process.env.GEMINI_API_KEY) {
       const apiKey = process.env.GEMINI_API_KEY
       const todayStr = formatLocalDate()
-      const prompt = `Сьогоднішня дата у Києві: ${todayStr}. Проаналізуй цей текст і розбий на масив завдань: "${extractedText}"`
+      const currentTimeStr = getKyivTimeStr()
+      const now = new Date()
+      const weekdays = ['неділя', 'понеділок', 'вівторок', 'середа', 'четвер', 'п’ятниця', 'субота']
+      const currentDayOfWeek = weekdays[now.getDay()]
+      const isExplicitInbox = extractedText.toLowerCase().startsWith('/inbox') || extractedText.toLowerCase().startsWith('inbox')
+
+      const cleanText = extractedText.replace(/^\/inbox\s*/i, '').replace(/^inbox\s*/i, '')
+
+      const prompt = `СИСТЕМНІ ЗМІННІ:
+Сьогоднішня дата за Києвом: ${todayStr} (формат YYYY-MM-DD). 
+Поточний день тижня: ${currentDayOfWeek}. 
+Поточний час за Києвом: ${currentTimeStr}.
+${isExplicitInbox ? 'РЕЖИМ INBOX: Замовчуванням dueDate = null та timeSlot = null!' : ''}
+
+<raw_data_input>
+${cleanText}
+</raw_data_input>`
 
       const geminiRes = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
@@ -151,10 +167,23 @@ export async function POST(req: Request) {
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
             systemInstruction: {
-              parts: [{ text: `Розбивай текст на масив завдань у JSON.` }],
+              parts: [{
+                text: `Ти — AI-планувальник для Telegram.
+ПРАВИЛА ДАТИ:
+1. Якщо вказано день тижня ("в суботу", "за сб", "у четвер"), знайди точну найближчу дату YYYY-MM-DD відносно ${currentDayOfWeek} (${todayStr}).
+2. Якщо дата не вказана, дефолт = "${todayStr}".
+3. ${isExplicitInbox ? 'У режимі INBOX dueDate та timeSlot ПОВИННІ бути null!' : ''}
+
+АЛГОРИТМ ПРІОРИТЕТІВ (1-4):
+- P1: Термінові дедлайни, термінова робота, важливі зустрічі.
+- P2: Особисті цілі, тренування, навчання.
+- P3: Рутина, покупки, дзвінки.
+- P4: Дрібні думки, нотатки.
+Встановлюй 1, 2, 3 або 4 на основі контексту!`
+              }],
             },
             generationConfig: {
-              temperature: 0.1,
+              temperature: 0.0,
               responseMimeType: 'application/json',
               responseSchema: {
                 type: 'OBJECT',
@@ -168,17 +197,17 @@ export async function POST(req: Request) {
                         category: { type: 'STRING' },
                         priority: { type: 'INTEGER' },
                         duration: { type: 'INTEGER' },
-                        dueDate: { type: 'STRING' },
-                        timeSlot: { type: 'STRING' },
+                        dueDate: { type: 'STRING', nullable: true },
+                        timeSlot: { type: 'STRING', nullable: true },
                       },
-                      required: ['title', 'priority', 'duration', 'dueDate'],
+                      required: ['title', 'priority', 'duration'],
                     },
                   },
                 },
                 required: ['tasks'],
               },
             },
-          }),
+          })
         }
       )
 
