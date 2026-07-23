@@ -282,108 +282,144 @@ ${isExplicitInbox ? 'РЕЖИМ INBOX: Замовчуванням dueDate = null
 ${cleanText}
 </raw_data_input>`
 
-      const responseSchema = isExplicitInbox ? {
-        type: 'OBJECT',
-        properties: {
-          tasks: {
-            type: 'ARRAY',
-            items: {
-              type: 'OBJECT',
-              properties: {
-                title: { type: 'STRING' },
-                category: { type: 'STRING' },
-                priority: { type: 'INTEGER' },
-                duration: { type: 'INTEGER' },
-                dueDate: { type: 'STRING', nullable: true },
-                timeSlot: { type: 'STRING', nullable: true },
+    const responseSchema = isExplicitInbox ? {
+      type: 'OBJECT',
+      properties: {
+        tasks: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              title: { type: 'STRING', description: 'Назва завдання українською мовою' },
+              category: { type: 'STRING', description: 'Категорія: inbox, work, personal, fitness, study' },
+              priority: { type: 'INTEGER', description: 'Пріоритет: 1, 2, 3, або 4' },
+              duration: { type: 'INTEGER', description: 'Очікувана тривалість у хвилинах' },
+              dueDate: { type: 'STRING', nullable: true, description: 'Дата YYYY-MM-DD або null' },
+              timeSlot: { type: 'STRING', nullable: true, description: 'Інтервал HH:MM - HH:MM або null' },
+              subtasks: {
+                type: 'ARRAY',
+                items: { type: 'STRING' },
               },
-              required: ['title', 'priority', 'duration'],
             },
+            required: ['title', 'priority', 'duration'],
           },
         },
-        required: ['tasks'],
-      } : {
-        type: 'OBJECT',
-        properties: {
-          tasks: {
-            type: 'ARRAY',
-            items: {
-              type: 'OBJECT',
-              properties: {
-                title: { type: 'STRING' },
-                category: { type: 'STRING' },
-                priority: { type: 'INTEGER' },
-                duration: { type: 'INTEGER' },
-                dueDate: { type: 'STRING', description: 'YYYY-MM-DD date string. Required.' },
-                timeSlot: { type: 'STRING', nullable: true },
+      },
+      required: ['tasks'],
+    } : {
+      type: 'OBJECT',
+      properties: {
+        tasks: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              title: { type: 'STRING', description: 'Назва завдання українською мовою' },
+              category: { type: 'STRING', description: 'Категорія: inbox, work, personal, fitness, study' },
+              priority: { type: 'INTEGER', description: 'Пріоритет: 1, 2, 3, або 4' },
+              duration: { type: 'INTEGER', description: 'Очікувана тривалість у хвилинах' },
+              dueDate: { type: 'STRING', description: 'YYYY-MM-DD date string. Required.' },
+              timeSlot: { type: 'STRING', nullable: true, description: 'Інтервал HH:MM - HH:MM або null' },
+              subtasks: {
+                type: 'ARRAY',
+                items: { type: 'STRING' },
               },
-              required: ['title', 'priority', 'duration', 'dueDate'],
             },
+            required: ['title', 'priority', 'duration', 'dueDate'],
           },
         },
-        required: ['tasks'],
-      }
+      },
+      required: ['tasks'],
+    }
 
-      const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
+    const payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      systemInstruction: {
+        parts: [
+          {
+            text: `Ти — AI-планувальник для Telegram.
+
+ГОЛОВНІ ПРАВИЛА РОЗБИТТЯ ТА ЧАСУ (Europe/Kyiv):
+1. ОБОВ’ЯЗКОВО РОЗБИВАЙ БУДЬ-ЯКІ ТЕКСТИ ТА ГОЛОСОВІ ПОВІДОМЛЕННЯ З ДЕКІЛЬКОМА ДУМКАМИ ТА СПРАВАМИ НА ОКРЕМІ ЗАВДАННЯ!
+   Наприклад "Сьогодні в 9.00 вставав і до 10.00 покушав. Потім півтори години дивився кіно." РОЗБИТИ НА 2 ОКРЕМІ ЗАВДАННЯ:
+   - "Покушати" (dueDate: "${todayStr}", timeSlot: "09:00 - 10:00", duration: 60)
+   - "Дивитися кіно" (dueDate: "${todayStr}", timeSlot: "10:00 - 11:30", duration: 90)
+
+2. ОБОВ'ЯЗКОВО ВИРАХОВУЙ ТА ЗАПОВНЮЙ timeSlot (у форматі "HH:MM - HH:MM"), якщо у повідомленні згадано:
+   - Точний час або інтервал ("з 9:00 до 10:00", "в 9.00 вставав і до 10.00", "о 15:00", "з 16:00 до 16:30").
+   - Відносний час ("через 2 години", "через 30 хв", "півтори години після цього").
+
+3. ПРАВИЛА РОЗРАХУНКУ ДАТИ:
+   - У режимі INBOX (${isExplicitInbox ? 'АКТИВНИЙ' : 'НЕ АКТИВНИЙ'}): dueDate = null та timeSlot = null.
+   - Для звичайного режиму PLANNER: якщо дата не вказана, за замовчуванням dueDate = "${todayStr}".
+   - Якщо каже "завтра", дата = "${todayStr}" + 1 день.
+   - Якщо згадано день тижня ("в суботу", "у вівторок"), знайди найближчу дату відносно ${currentDayOfWeek} (${todayStr}).
+
+4. АЛГОРИТМ ПРІОРИТЕТІВ (1-4):
+   - P1: Термінові дедлайни, аварії, важливі зустрічі.
+   - P2: Особисті цілі, тренування, навчання, відпочинок за розкладом.
+   - P3: Рутина, покупки, їжа.
+   - P4: Дрібні думки, нотатки без дати.`,
+          },
+        ],
+      },
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json',
+        responseSchema,
+      },
+    }
+
+    let geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    )
+
+    if (!geminiRes.ok) {
+      console.warn('Telegram AI fallback to gemini-3.1-flash-lite...')
+      geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            systemInstruction: {
-              parts: [{
-                text: `Ти — AI-планувальник для Telegram.
-ПРАВИЛА ДАТИ:
-1. Якщо вказано день тижня ("в суботу", "за сб", "у четвер"), знайди точну найближчу дату YYYY-MM-DD відносно ${currentDayOfWeek} (${todayStr}).
-2. Якщо дата не вказана і не Inbox — стави дефолт = "${todayStr}".
-3. ${isExplicitInbox ? 'У режимі INBOX dueDate та timeSlot ПОВИННІ бути null!' : ''}
-
-АЛГОРИТМ ПРІОРИТЕТІВ (1-4):
-- P1: Термінові дедлайни, термінова робота, аварії.
-- P2: Особисті цілі, тренування, навчання.
-- P3: Рутина, покупки, дзвінки.
-- P4: Дрібні думки, нотатки без дати.`
-              }],
-            },
-            generationConfig: {
-              temperature: 0.2,
-              responseMimeType: 'application/json',
-              responseSchema,
-            },
-          })
+          body: JSON.stringify(payload),
         }
       )
+    }
 
-      if (geminiRes.ok) {
-        const geminiData = await geminiRes.json()
-        const parsedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text
-        if (parsedText) {
-          const parsedObj = JSON.parse(parsedText)
-          if (parsedObj.tasks && parsedObj.tasks.length > 0) {
-            tasksToCreate = parsedObj.tasks.map((t: any) => {
-              const textLower = (t.title || extractedText).toLowerCase()
-              const isUrgent = textLower.includes('терміново') || textLower.includes('аварія') || textLower.includes('важливо') || textLower.includes('негайно')
-              
-              let priority = isUrgent ? 1 : (t.priority || 3)
-              let dueDate = t.dueDate
+    if (geminiRes.ok) {
+      const geminiData = await geminiRes.json()
+      const parsedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text
+      if (parsedText) {
+        const parsedObj = JSON.parse(parsedText)
+        if (parsedObj.tasks && parsedObj.tasks.length > 0) {
+          tasksToCreate = parsedObj.tasks.map((t: any) => {
+            const textLower = (t.title || extractedText).toLowerCase()
+            const isUrgent = textLower.includes('терміново') || textLower.includes('аварія') || textLower.includes('важливо') || textLower.includes('негайно')
+            
+            let priority = isUrgent ? 1 : (t.priority || 3)
+            let dueDate = t.dueDate
 
-              if (isExplicitInbox) {
-                dueDate = null
-              } else if (!dueDate || dueDate === 'null') {
-                dueDate = todayStr // 🛡️ Жорстко ставимо сьогодні, якщо не Inbox!
-              }
+            if (isExplicitInbox) {
+              dueDate = null
+            } else if (!dueDate || dueDate === 'null') {
+              dueDate = todayStr // 🛡️ Жорстко ставимо сьогодні, якщо не Inbox!
+            }
 
-              return {
-                ...t,
-                priority,
-                dueDate,
-              }
-            })
-          }
+            return {
+              ...t,
+              priority,
+              dueDate,
+            }
+          })
         }
       }
     }
+  }
 
     // Реєструємо меню команд у Telegram через setMyCommands (автокомпліт при /)
     fetch(`https://api.telegram.org/bot${botToken}/setMyCommands`, {
@@ -426,6 +462,15 @@ ${cleanText}
           duration: t.duration || 30,
           dueDate: targetDate,
           timeSlot: t.timeSlot || null,
+          subtasks: Array.isArray(t.subtasks) && t.subtasks.length > 0 ? {
+            create: t.subtasks.map((st: string) => ({
+              title: st,
+              userId: user.id,
+              priority: 3,
+              category: t.category || 'personal',
+              duration: 15,
+            })),
+          } : undefined,
         },
       })
 
