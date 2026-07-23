@@ -129,7 +129,6 @@ export default function Home() {
   const [isCreatingNotionDB, setIsCreatingNotionDB] = useState<boolean>(false)
 
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3.1-flash-lite')
-  const [draftTasks, setDraftTasks] = useState<any[] | null>(null)
 
   const [sortBy, setSortBy] = useState<'time' | 'priority'>('time')
   const [energyProfile, setEnergyProfile] = useState<string>('morning')
@@ -209,6 +208,47 @@ export default function Home() {
     }
   }, [user, activeTab, selectedDate])
 
+  const saveDraftTasks = useCallback(async (drafts: any[]) => {
+    if (!drafts || drafts.length === 0) return
+    setIsProcessing(true)
+    setProcessStatus('Зберігаємо...')
+    try {
+      const isInboxTab = activeTab === 'inbox'
+      const finalTasks = drafts.map((t) => {
+        if (isInboxTab || t.category === 'inbox') {
+          return {
+            ...t,
+            category: 'inbox',
+            dueDate: null,
+            timeSlot: null,
+          }
+        }
+        return t
+      })
+
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tasks: finalTasks }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } })
+        setInputText('')
+        showToast(`🎉 ${data.tasks?.length || drafts.length} справ додано!`, 'success')
+        await fetchTasks()
+        await fetchAllSummaries()
+      } else {
+        showToast(data.error || 'Помилка збереження', 'error')
+      }
+    } catch {
+      showToast('Помилка збереження', 'error')
+    } finally {
+      setIsProcessing(false)
+      setProcessStatus('')
+    }
+  }, [activeTab, fetchTasks, fetchAllSummaries, showToast])
+
   const handleSendText = async () => {
     if (!inputText.trim() || isProcessing) return
     setIsProcessing(true)
@@ -221,8 +261,7 @@ export default function Home() {
       })
       const data = await res.json()
       if (data.drafts?.length > 0) {
-        setDraftTasks(data.drafts)
-        setInputText('')
+        await saveDraftTasks(data.drafts)
       } else if (data.error) {
         showToast(`Помилка AI: ${data.error}`, 'error')
       }
@@ -269,14 +308,16 @@ export default function Home() {
         body: JSON.stringify({ text, model: selectedModel, mode: activeTab === 'inbox' ? 'inbox' : 'today' }),
       })
       const parseData = await parseRes.json()
-      if (parseData.drafts?.length > 0) setDraftTasks(parseData.drafts)
+      if (parseData.drafts?.length > 0) {
+        await saveDraftTasks(parseData.drafts)
+      }
     } catch (err: any) {
       console.error('Audio error:', err)
     } finally {
       setIsProcessing(false)
       setProcessStatus('')
     }
-  }, [sttModel, selectedModel, showToast])
+  }, [sttModel, selectedModel, showToast, saveDraftTasks])
 
   const startRecording = async () => {
     try {
@@ -499,39 +540,7 @@ export default function Home() {
     } catch { showToast('Помилка запиту до Notion', 'error') } finally { setIsCreatingNotionDB(false) }
   }
 
-  const handleConfirmDrafts = async () => {
-    if (!draftTasks?.length) return
-    setIsProcessing(true)
-    setProcessStatus('Зберігаємо...')
-    try {
-      const isInboxTab = activeTab === 'inbox'
-      const finalTasks = draftTasks.map((t) => {
-        if (isInboxTab || t.category === 'inbox') {
-          return {
-            ...t,
-            category: 'inbox',
-            dueDate: null,
-            timeSlot: null,
-          }
-        }
-        return t
-      })
 
-      const res = await fetch('/api/tasks', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tasks: finalTasks }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } })
-        setDraftTasks(null)
-        setInputText('')
-        showToast(`🎉 ${data.tasks?.length || draftTasks.length} справ додано!`, 'success')
-        await fetchTasks()
-        await fetchAllSummaries()
-      } else showToast(data.error || 'Помилка', 'error')
-    } catch { showToast('Помилка збереження', 'error') } finally { setIsProcessing(false); setProcessStatus('') }
-  }
 
   const handleActivateDemo = async () => {
     try {
@@ -939,74 +948,7 @@ export default function Home() {
 
 
 
-        {/* Чернетки */}
-        {draftTasks && draftTasks.length > 0 && (
-          <div className="bg-[#1C1C1E] border border-[#FFAE58]/60 rounded-2xl p-4 shadow-xl">
-            <div className="flex items-center justify-between mb-3 border-b border-[#232326] pb-2">
-              <span className="text-xs font-extrabold text-[#FFAE58] uppercase tracking-wider">
-                🤖 AI пропонує {draftTasks.length} справ{draftTasks.length > 1 ? 'и' : 'у'}:
-              </span>
-              <button onClick={() => { setDraftTasks(null); setInputText('') }} className="text-[10px] text-[#636366] hover:text-white"><X className="w-4 h-4" /></button>
-            </div>
 
-            <div className="flex flex-col gap-2.5">
-              {draftTasks.map((t, idx) => {
-                const pc = PRIORITY_CONFIG[t.priority] || PRIORITY_CONFIG[4]
-                return (
-                  <div key={idx} className={`bg-[#161618] border border-[#232326] border-l-4 ${pc.border} rounded-xl p-3`}>
-                    <input type="text" value={t.title}
-                      onChange={(e) => { const u = [...draftTasks]; u[idx].title = e.target.value; setDraftTasks(u) }}
-                      className="w-full bg-transparent text-white text-sm font-medium focus:outline-none mb-2"
-                    />
-                    {activeTab !== 'inbox' && t.category !== 'inbox' ? (
-                      <div className="grid grid-cols-2 gap-2 mb-2">
-                        <input type="text" value={t.timeSlot || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].timeSlot = e.target.value; setDraftTasks(u) }} placeholder="⏰ Час (напр. 14:00-15:00)" className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none" />
-                        <input type="date" value={t.dueDate || ''} onChange={(e) => { const u = [...draftTasks]; u[idx].dueDate = e.target.value; setDraftTasks(u) }} className="bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none" />
-                      </div>
-                    ) : (
-                      <div className="text-[10px] text-[#A78BFA] bg-[#1C1C1E] px-2.5 py-1 rounded-lg border border-[#232326] mb-2 font-medium">
-                        📥 Збережеться в Inbox без дати й часу
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <select value={t.priority} onChange={(e) => { const u = [...draftTasks]; u[idx].priority = Number(e.target.value); setDraftTasks(u) }} className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none">
-                        <option value={1}>🔴 P1 — Терміново</option>
-                        <option value={2}>🟠 P2 — Важливо</option>
-                        <option value={3}>🔵 P3 — Normal</option>
-                        <option value={4}>⚪ P4 — Низький</option>
-                      </select>
-                      <select value={t.category} onChange={(e) => { const u = [...draftTasks]; u[idx].category = e.target.value; setDraftTasks(u) }} className="flex-1 bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none">
-                        <option value="inbox">📥 Inbox</option>
-                        <option value="work">💻 Work</option>
-                        <option value="personal">👤 Personal</option>
-                        <option value="fitness">🏋️ Fitness</option>
-                        <option value="study">📚 Study</option>
-                      </select>
-                      <input type="number" value={t.duration === 0 || t.duration === ('' as any) ? '' : t.duration} onChange={(e) => { const val = e.target.value; const u = [...draftTasks]; u[idx].duration = val === '' ? ('' as any) : Number(val); setDraftTasks(u) }} placeholder="хв" min={1} className="w-14 bg-[#1C1C1E] border border-[#232326] text-white text-[11px] rounded-lg px-2 py-1.5 focus:outline-none text-center" />
-                    </div>
-                    {t.subtasks?.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-[#232326] flex flex-col gap-1">
-                        {t.subtasks.map((s: string, si: number) => (
-                          <div key={si} className="text-[11px] text-[#8E8E93] flex items-center gap-1.5"><Circle className="w-3 h-3 text-[#A78BFA]" />{s}</div>
-                        ))}
-                      </div>
-                    )}
-                    <button onClick={() => setDraftTasks(draftTasks.filter((_, i) => i !== idx))} className="mt-2 text-[10px] text-[#636366] hover:text-[#FF5E5E] flex items-center gap-1"><X className="w-3 h-3" /> Прибрати</button>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="mt-3 flex gap-2">
-              <button onClick={handleConfirmDrafts} disabled={isProcessing} className="flex-1 py-3 bg-gradient-to-r from-[#FF5E5E] to-[#FFAE58] text-white text-sm font-bold rounded-xl active:scale-95 disabled:opacity-50">
-                ✅ Підтвердити всі
-              </button>
-              <button onClick={() => { setDraftTasks(null); setInputText('') }} className="px-4 py-3 bg-[#232326] text-[#8E8E93] text-xs font-bold rounded-xl active:scale-95">
-                Скасувати
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Список задач */}
         {(activeTab === 'today' || activeTab === 'week' || activeTab === 'inbox') && (
