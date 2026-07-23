@@ -1044,7 +1044,11 @@ export default function Home() {
                     <Zap className="w-7 h-7 text-[#FF5E5E] opacity-60" />
                   </div>
                   <h3 className="text-sm font-bold text-white mb-2">Тут народжується твій спокій</h3>
-                  <p className="text-xs text-[#636366] max-w-xs mb-5">Надиктуй голосом першу задачу — AI сам розбере і розкладе по часу!</p>
+                  <p className="text-xs text-[#636366] max-w-xs mb-5">
+                    {activeTab === 'inbox'
+                      ? 'Вивали всі думки з голови — AI збереже їх у беклог без дедлайнів! 🧠'
+                      : 'Надиктуй голосом першу задачу — AI сам розбере і розкладе по часу! 🪄'}
+                  </p>
                   <button
                     onClick={isRecording ? stopRecording : startRecording}
                     className={`px-6 py-3 rounded-2xl font-bold text-sm text-white transition-all active:scale-95 ${isRecording ? 'bg-[#FF5E5E] animate-pulse shadow-lg shadow-[#FF5E5E]/40' : 'bg-gradient-to-r from-[#FF5E5E] to-[#A78BFA] shadow-md'}`}
