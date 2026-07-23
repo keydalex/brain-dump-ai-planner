@@ -72,21 +72,17 @@ export async function POST(req: Request) {
     if (body.tasks && Array.isArray(body.tasks)) {
       const createdTasks = []
       for (const t of body.tasks) {
-        // Парсимо дату — зберігаємо як noon UTC щоб уникнути timezone drift
-        let targetDate = new Date()
+        const isInbox = (t.category === 'inbox' || !t.dueDate) && t.category === 'inbox'
+        let targetDate: Date | null = null
         if (t.dueDate) {
           if (typeof t.dueDate === 'string' && t.dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            // YYYY-MM-DD → noon UTC → ніколи не стрибає на сусідній день
             const [y, m, d] = t.dueDate.split('-').map(Number)
             targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0, 0))
           } else {
             const parsed = new Date(t.dueDate)
-            if (!isNaN(parsed.getTime())) {
-              targetDate = parsed
-            }
+            if (!isNaN(parsed.getTime())) targetDate = parsed
           }
-        } else {
-          // Дефолт — сьогодні noon UTC
+        } else if (!isInbox) {
           const now = new Date()
           targetDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0))
         }
@@ -100,7 +96,7 @@ export async function POST(req: Request) {
             category: t.category || 'inbox',
             duration: t.duration ? Number(t.duration) : 30,
             dueDate: targetDate,
-            timeSlot: t.timeSlot || null,
+            timeSlot: isInbox ? null : (t.timeSlot || null),
             subtasks: t.subtasks && t.subtasks.length > 0 ? {
               create: t.subtasks.map((st: string) => ({
                 userId: user.id,
@@ -126,7 +122,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Назва завдання є обов\'язковою' }, { status: 400 })
     }
 
-    let targetDate = new Date()
+    const isSingleInbox = (category === 'inbox' || !dueDate) && category === 'inbox'
+    let targetDate: Date | null = null
     if (dueDate) {
       if (typeof dueDate === 'string' && dueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
         const [y, m, d] = dueDate.split('-').map(Number)
@@ -135,7 +132,7 @@ export async function POST(req: Request) {
         const parsed = new Date(dueDate)
         if (!isNaN(parsed.getTime())) targetDate = parsed
       }
-    } else {
+    } else if (!isSingleInbox) {
       const now = new Date()
       targetDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0))
     }
@@ -149,7 +146,7 @@ export async function POST(req: Request) {
         category: category || 'inbox',
         duration: duration ? Number(duration) : 30,
         dueDate: targetDate,
-        timeSlot: timeSlot || null,
+        timeSlot: isSingleInbox ? null : (timeSlot || null),
         parentId: parentId || null,
       },
       include: {

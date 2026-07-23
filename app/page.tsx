@@ -85,7 +85,7 @@ export default function Home() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
 
-  const [activeTab, setActiveTab] = useState<'today' | 'week' | 'inbox' | 'settings'>('today')
+  const [activeTab, setActiveTab] = useState<'today' | 'week' | 'inbox' | 'habits' | 'settings'>('today')
   const [selectedDate, setSelectedDate] = useState<string>(formatLocalDate())
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
 
@@ -216,7 +216,7 @@ export default function Home() {
       const res = await fetch('/api/parse-task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: inputText, model: selectedModel }),
+        body: JSON.stringify({ text: inputText, model: selectedModel, mode: activeTab === 'inbox' ? 'inbox' : 'today' }),
       })
       const data = await res.json()
       if (data.drafts?.length > 0) {
@@ -266,7 +266,7 @@ export default function Home() {
       const parseRes = await fetch('/api/parse-task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, model: selectedModel }),
+        body: JSON.stringify({ text, model: selectedModel, mode: activeTab === 'inbox' ? 'inbox' : 'today' }),
       })
       const parseData = await parseRes.json()
       if (parseData.drafts?.length > 0) setDraftTasks(parseData.drafts)
@@ -748,21 +748,18 @@ export default function Home() {
         {activeTab !== 'settings' && (
           <div id="input-area" className="bg-[#161618] border border-[#232326] rounded-2xl p-3 shadow-lg">
             <div className="flex items-start gap-2.5">
-              {/* Преміальна темна кнопка мікрофона без зайвого сяйва */}
+              {/* Велика мобільна кнопка мікрофона */}
               <button
                 id="mic-btn"
                 onClick={isRecording ? stopRecording : startRecording}
-                className={`shrink-0 w-20 h-20 rounded-2xl flex flex-col items-center justify-center transition-all active:scale-95 border ${
+                className={`shrink-0 w-16 h-16 rounded-2xl flex flex-col items-center justify-center transition-all active:scale-95 border ${
                   isRecording
-                    ? 'bg-[#1C1C1E] border-[#FF5E5E] text-[#FF5E5E] shadow-lg shadow-[#FF5E5E]/20'
-                    : 'bg-[#1C1C1E] border-[#232326] text-white hover:border-[#FF5E5E]/50'
+                    ? 'bg-[#EF4444] border-red-400 text-white shadow-lg shadow-[#EF4444]/40 animate-pulse ring-4 ring-[#EF4444]/30'
+                    : 'bg-gradient-to-br from-[#FF5E5E] to-[#FFAE58] border-white/20 text-white shadow-lg shadow-[#FF5E5E]/30 hover:scale-105'
                 }`}
                 title={isRecording ? 'Зупинити запис' : 'Голосовий ввід'}
               >
-                <Mic className={`w-7 h-7 mb-1 ${isRecording ? 'text-[#FF5E5E] animate-pulse' : 'text-white'}`} />
-                <span className="text-[9px] font-bold uppercase tracking-wider text-[#8E8E93]">
-                  {isRecording ? 'Запис...' : 'Голос'}
-                </span>
+                <Mic className={`w-8 h-8 ${isRecording ? 'animate-bounce text-white' : 'text-white'}`} />
               </button>
 
               <div className="flex-1 min-w-0">
@@ -772,7 +769,7 @@ export default function Home() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText() }
                   }}
-                  placeholder={isRecording ? '🔴 Запис іде...' : 'Що в голові? Надиктуй або напиши...'}
+                  placeholder={isRecording ? '🔴 Запис іде...' : (activeTab === 'inbox' ? 'Нова думка в Inbox...' : 'Що в голові? Надиктуй або напиши...')}
                   disabled={isProcessing || isRecording}
                   rows={2}
                   className="w-full bg-transparent text-white text-sm rounded-xl focus:outline-none min-h-[52px] max-h-[100px] resize-none placeholder:text-[#636366]"
@@ -789,15 +786,15 @@ export default function Home() {
                 id="send-btn"
                 onClick={handleSendText}
                 disabled={isProcessing || !inputText.trim()}
-                className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-90 mt-1 ${
+                className={`shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center transition-all active:scale-90 ${
                   sendAnimating
                     ? 'bg-[#10B981] scale-90 shadow-lg shadow-[#10B981]/40'
                     : inputText.trim()
-                    ? 'bg-[#FF5E5E] shadow-md shadow-[#FF5E5E]/30'
-                    : 'bg-[#232326] opacity-40'
+                    ? 'bg-gradient-to-br from-[#FF5E5E] to-[#FFAE58] text-white shadow-md shadow-[#FF5E5E]/30'
+                    : 'bg-[#232326] opacity-40 text-[#8E8E93]'
                 }`}
               >
-                <Send className="w-4 h-4 text-white" />
+                <Send className="w-5 h-5" />
               </button>
             </div>
 
