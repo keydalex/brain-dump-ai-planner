@@ -2,7 +2,8 @@
 
 Мобільний PWA-додаток (Todoist-style) з нативним штучним інтелектом для структурування хаотичних думок, ідей та голосових нотаток у чіткий розклад Notion та Google Calendar.
 
-Проєкт: https://brain-dump-ai-planner.vercel.app/
+AI planner: https://brain-dump-ai-planner.vercel.app/
+Telegram bot: @brain_dump_ai_planner_bot
 
 ---
 
